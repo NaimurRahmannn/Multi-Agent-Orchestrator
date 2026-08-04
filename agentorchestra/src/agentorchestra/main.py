@@ -4,34 +4,36 @@ from crewai.flow import Flow, listen, start
 from pydantic import BaseModel
 
 
-class PhaseOneState(BaseModel):
-    readiness_message: str = ""
+class AgentOrchestraStatusState(BaseModel):
+    status_message: str = ""
 
 
-class PhaseOneFlow(Flow[PhaseOneState]):
-    """Minimal generated Flow entry point kept runnable for Phase 1."""
+class AgentOrchestraStatusFlow(Flow[AgentOrchestraStatusState]):
+    """Status-only Flow entry point kept honest until production orchestration exists."""
 
     @start()
     def prepare(self, crewai_trigger_payload: dict | None = None) -> None:
-        self.state.readiness_message = (
-            "AgentOrchestra Phase 1 foundation is installed. "
-            "Run scripts/feasibility checks for live environment evidence."
+        self.state.status_message = (
+            "AgentOrchestra Manager routing is available. "
+            "Run scripts/run_manager.py for one routing request or "
+            "scripts/run_routing_benchmark.py for the approved benchmark. "
+            "Specialist execution, staging, QA, and UI orchestration are future phases."
         )
 
     @listen(prepare)
     def report(self) -> str:
-        print(self.state.readiness_message)
-        return self.state.readiness_message
+        print(self.state.status_message)
+        return self.state.status_message
 
 
 def kickoff():
-    phase_one_flow = PhaseOneFlow()
-    return phase_one_flow.kickoff()
+    status_flow = AgentOrchestraStatusFlow()
+    return status_flow.kickoff()
 
 
 def plot():
-    phase_one_flow = PhaseOneFlow()
-    phase_one_flow.plot()
+    status_flow = AgentOrchestraStatusFlow()
+    status_flow.plot()
 
 
 def run_with_trigger():
@@ -49,10 +51,10 @@ def run_with_trigger():
     except json.JSONDecodeError as exc:
         raise Exception("Invalid JSON payload provided as argument") from exc
 
-    phase_one_flow = PhaseOneFlow()
+    status_flow = AgentOrchestraStatusFlow()
 
     try:
-        result = phase_one_flow.kickoff({"crewai_trigger_payload": trigger_payload})
+        result = status_flow.kickoff({"crewai_trigger_payload": trigger_payload})
         return result
     except Exception as exc:
         raise Exception(f"An error occurred while running the flow with trigger: {exc}") from exc

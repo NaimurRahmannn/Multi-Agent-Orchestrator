@@ -19,6 +19,8 @@ kickoff = "agentorchestra.main:kickoff"
 run_crew = "agentorchestra.main:kickoff"
 plot = "agentorchestra.main:plot"
 run_with_trigger = "agentorchestra.main:run_with_trigger"
+agentorchestra-manager = "agentorchestra.scripts.run_manager:main"
+agentorchestra-routing-benchmark = "agentorchestra.scripts.run_routing_benchmark:main"
 
 [build-system]
 requires = ["hatchling"]

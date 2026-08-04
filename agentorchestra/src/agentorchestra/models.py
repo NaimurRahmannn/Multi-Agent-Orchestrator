@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StrictBool,
+    StrictFloat,
     StrictInt,
     StrictStr,
     field_validator,
@@ -276,6 +277,45 @@ class RoutingEvidenceResult(AgentOrchestraModel):
                 raise ValueError("invalid structural results must include validation_error.")
             if self.routing_correct:
                 raise ValueError("routing_correct cannot be true when structural validation failed.")
+        return self
+
+
+class ManagerRunResult(AgentOrchestraModel):
+    request: EditRequest
+    plan: ManagerRoutingPlan
+    latency_ms: StrictFloat = Field(ge=0)
+    token_usage: TokenUsage = Field(default_factory=TokenUsage)
+    model: StrictStr = Field(min_length=1, max_length=160)
+
+    @field_validator("model", mode="before")
+    @classmethod
+    def strip_model(cls, value: object) -> object:
+        return _strip_text(value)
+
+
+class RoutingBenchmarkReport(AgentOrchestraModel):
+    generated_at: StrictStr = Field(min_length=1, max_length=40)
+    model: StrictStr = Field(min_length=1, max_length=160)
+    total_cases: StrictInt = Field(ge=0)
+    structurally_valid_cases: StrictInt = Field(ge=0)
+    correct_cases: StrictInt = Field(ge=0)
+    structural_validity_rate: StrictStr
+    routing_accuracy: StrictStr
+    results: list[RoutingEvidenceResult] = Field(default_factory=list)
+
+    @field_validator("generated_at", "model", "structural_validity_rate", "routing_accuracy", mode="before")
+    @classmethod
+    def strip_report_text(cls, value: object) -> object:
+        return _strip_text(value)
+
+    @model_validator(mode="after")
+    def validate_summary_counts(self) -> "RoutingBenchmarkReport":
+        if self.total_cases != len(self.results):
+            raise ValueError("total_cases must equal the number of results.")
+        if self.structurally_valid_cases > self.total_cases:
+            raise ValueError("structurally_valid_cases cannot exceed total_cases.")
+        if self.correct_cases > self.total_cases:
+            raise ValueError("correct_cases cannot exceed total_cases.")
         return self
 
 

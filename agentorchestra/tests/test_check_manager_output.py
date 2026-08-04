@@ -2,6 +2,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+from agentorchestra.models import ManagerRunResult
+
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "feasibility" / "check_manager_output.py"
 SPEC = importlib.util.spec_from_file_location("check_manager_output", SCRIPT_PATH)
 assert SPEC and SPEC.loader
@@ -53,35 +55,38 @@ def test_disable_crewai_prompt_cache_breakpoints():
     assert crewai_cache.mark_cache_breakpoint(message) == message
 
 
-def test_generate_plan_retries_after_invalid_json(monkeypatch):
-    class FakeLlm:
-        def __init__(self):
-            self.calls = 0
+def test_run_case_uses_production_manager_router_once(monkeypatch):
+    calls = []
 
-        def call(self, messages, from_agent):
-            self.calls += 1
-            if self.calls == 1:
-                return "not json"
-            return (
-                '{"status":"execute","request_type":"css_change",'
-                '"selected_specialists":["css"],'
-                '"routing_rationale":"CSS-only visual change.",'
-                '"assignments":[{"agent":"css","task":"Update button color."}],'
-                '"acceptance_criteria":["Button color is updated."],'
-                '"clarification_question":null,"rejection_reason":null}'
+    class FakeRouter:
+        def __init__(self, settings):
+            self.settings = settings
+
+        def route(self, request):
+            calls.append(request)
+            return ManagerRunResult(
+                request=request,
+                plan=MODULE._extract_plan(
+                    '{"status":"execute","request_type":"css_change",'
+                    '"selected_specialists":["css"],'
+                    '"routing_rationale":"CSS-only visual change.",'
+                    '"assignments":[{"agent":"css","task":"Update button color."}],'
+                    '"acceptance_criteria":["Button color is updated."],'
+                    '"clarification_question":null,"rejection_reason":null}'
+                ),
+                latency_ms=25.0,
+                token_usage=MODULE.TokenUsage(),
+                model="groq/test-model",
             )
 
-    monkeypatch.setenv("MANAGER_LLM_MAX_ATTEMPTS", "2")
+    monkeypatch.setattr(MODULE, "ManagerRouter", FakeRouter)
 
-    raw, plan, attempts = MODULE._generate_plan_with_retries(
-        FakeLlm(),
-        MODULE.CASES[0],
-        manager=object(),
-    )
+    trial = MODULE._run_case(MODULE.CASES[0], settings=object())
 
-    assert raw.startswith('{"status"')
-    assert plan.status == "execute"
-    assert attempts == 2
+    assert len(calls) == 1
+    assert calls[0].target_page == "index.html"
+    assert trial["structural_validity"] is True
+    assert trial["attempts"] == 1
 
 
 def test_trial_from_result_preserves_empty_token_usage_report_shape():
