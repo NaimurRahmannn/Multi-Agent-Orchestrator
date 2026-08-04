@@ -2,7 +2,6 @@ import importlib.util
 import sys
 from pathlib import Path
 
-
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "feasibility" / "check_manager_output.py"
 SPEC = importlib.util.spec_from_file_location("check_manager_output", SCRIPT_PATH)
 assert SPEC and SPEC.loader
@@ -83,3 +82,24 @@ def test_generate_plan_retries_after_invalid_json(monkeypatch):
     assert raw.startswith('{"status"')
     assert plan.status == "execute"
     assert attempts == 2
+
+
+def test_trial_from_result_preserves_empty_token_usage_report_shape():
+    result = MODULE.RoutingEvidenceResult(
+        case_id="css_case",
+        request="Change button color.",
+        expected_status="execute",
+        expected_specialists=["css"],
+        actual_status="execute",
+        actual_specialists=["css"],
+        routing_rationale="CSS owns presentation changes.",
+        structurally_valid=True,
+        routing_correct=True,
+        latency_ms=100,
+        token_usage=MODULE.TokenUsage(),
+        validation_error=None,
+    )
+
+    trial = MODULE._trial_from_result(result)
+
+    assert trial["token_usage"] == {}

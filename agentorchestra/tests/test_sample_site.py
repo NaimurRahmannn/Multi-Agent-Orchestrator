@@ -1,7 +1,6 @@
 from html.parser import HTMLParser
 from pathlib import Path
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = PROJECT_ROOT / "sites" / "fixture"
 WORKING_ROOT = PROJECT_ROOT / "sites" / "working"

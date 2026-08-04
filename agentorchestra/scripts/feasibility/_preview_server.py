@@ -17,7 +17,9 @@ def preview_server(document_root: Path) -> Iterator[str]:
     if not root.exists() or not root.is_dir():
         raise ValueError(f"Document root must be an existing directory: {document_root}")
 
-    handler = lambda *args, **kwargs: QuietStaticHandler(*args, directory=str(root), **kwargs)
+    def handler(*args: object, **kwargs: object) -> QuietStaticHandler:
+        return QuietStaticHandler(*args, directory=str(root), **kwargs)
+
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = Thread(target=server.serve_forever, name="agentorchestra-preview", daemon=True)
     try:

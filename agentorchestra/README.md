@@ -16,6 +16,21 @@ Phase 1 implements project foundation and feasibility only:
 
 Production Manager, HTML, CSS, SEO, QA agents, the staged editing pipeline, full Flow orchestration, patch tools, and Streamlit UI are not implemented yet.
 
+## Phase 2 Status
+
+Phase 2 adds the production configuration and strict domain contracts future phases will use:
+
+- `EditRequest` validates safe single-page static HTML edit requests.
+- `ManagerRoutingPlan` validates `execute`, `clarification_required`, and `out_of_scope` routing plans.
+- `PatchProposal` validates specialist patch proposals but does not edit files.
+- `RoutingEvidenceCase`, `RoutingEvidenceResult`, and `TokenUsage` define routing benchmark evidence.
+- `QAResult` and `CriterionResult` validate QA verdict structure but do not execute QA.
+- `validate_qa_coverage()` checks QA criterion coverage against Manager acceptance criteria.
+
+Supported routing statuses are `execute`, `clarification_required`, and `out_of_scope`. Supported specialist names are `html`, `css`, and `seo`; QA is intentionally not a selectable specialist.
+
+These models are contracts only. Production agents, production Flow orchestration, staged patch execution, production Lighthouse services, production Playwright services, and the Streamlit UI are still future-phase work.
+
 ## Prerequisites
 
 - Python `>=3.10,<3.14` with the existing project virtual environment.
@@ -38,7 +53,10 @@ GROQ_API_KEY=
 GROQ_MODEL=
 APP_ENV=development
 LOG_LEVEL=INFO
+AGENTORCHESTRA_ROOT=
 ```
+
+Configuration is loaded with `pydantic-settings`. `AGENTORCHESTRA_ROOT` is optional and is mainly useful for tests or unusual local layouts; derived site and report paths remain under that root. Runtime-directory creation is explicit and limited to staging and report directories.
 
 Install Python dependencies with the project toolchain:
 
@@ -84,6 +102,17 @@ Expected generated outputs:
 pytest -q
 pytest --cov=agentorchestra --cov-report=term-missing
 ruff check .
+```
+
+Focused contract suites:
+
+```bash
+pytest tests/test_config.py -q
+pytest tests/test_models.py -q
+pytest tests/test_edit_request.py -q
+pytest tests/test_patch_proposal.py -q
+pytest tests/test_routing_evidence_models.py -q
+pytest tests/test_qa_models.py -q
 ```
 
 ## Sample Site

@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
-from pydantic import BaseModel
-
 from crewai.flow import Flow, listen, start
+from pydantic import BaseModel
 
 
 class PhaseOneState(BaseModel):
@@ -47,16 +46,16 @@ def run_with_trigger():
 
     try:
         trigger_payload = json.loads(sys.argv[1])
-    except json.JSONDecodeError:
-        raise Exception("Invalid JSON payload provided as argument")
+    except json.JSONDecodeError as exc:
+        raise Exception("Invalid JSON payload provided as argument") from exc
 
     phase_one_flow = PhaseOneFlow()
 
     try:
         result = phase_one_flow.kickoff({"crewai_trigger_payload": trigger_payload})
         return result
-    except Exception as e:
-        raise Exception(f"An error occurred while running the flow with trigger: {e}")
+    except Exception as exc:
+        raise Exception(f"An error occurred while running the flow with trigger: {exc}") from exc
 
 
 if __name__ == "__main__":

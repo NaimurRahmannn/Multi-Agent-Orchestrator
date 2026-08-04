@@ -21,6 +21,41 @@ def execute_plan(**overrides):
     return payload
 
 
+def clarification_plan(**overrides):
+    payload = {
+        "status": "clarification_required",
+        "request_type": "ambiguous_request",
+        "selected_specialists": [],
+        "routing_rationale": "The request does not name a concrete change.",
+        "assignments": [],
+        "acceptance_criteria": [],
+        "clarification_question": "Which page and element should change?",
+        "rejection_reason": None,
+    }
+    payload.update(overrides)
+    return payload
+
+
+def out_of_scope_plan(**overrides):
+    payload = {
+        "status": "out_of_scope",
+        "request_type": "unsupported_backend",
+        "selected_specialists": [],
+        "routing_rationale": "Backend work is outside the static-site editing scope.",
+        "assignments": [],
+        "acceptance_criteria": [],
+        "clarification_question": None,
+        "rejection_reason": "Backend work is not supported.",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def assert_invalid(payload):
+    with pytest.raises(ValidationError):
+        ManagerRoutingPlan.model_validate(payload)
+
+
 def test_execute_valid_plan():
     plan = ManagerRoutingPlan.model_validate(execute_plan())
 
@@ -28,131 +63,117 @@ def test_execute_valid_plan():
     assert plan.selected_specialists == ["css"]
 
 
-def test_execute_duplicate_specialists_rejected():
-    with pytest.raises(ValidationError):
-        ManagerRoutingPlan.model_validate(
-            execute_plan(
-                selected_specialists=["css", "css"],
-                assignments=[{"agent": "css", "task": "Update button color."}],
-            )
+def test_execute_valid_multi_specialist_plan_normalizes_assignment_order():
+    plan = ManagerRoutingPlan.model_validate(
+        execute_plan(
+            selected_specialists=["html", "css"],
+            assignments=[
+                {"agent": "css", "task": "Style the note."},
+                {"agent": "html", "task": "Add a note."},
+            ],
+            acceptance_criteria=["Note exists.", "Note is styled."],
         )
+    )
 
-
-def test_execute_missing_assignment_rejected():
-    with pytest.raises(ValidationError):
-        ManagerRoutingPlan.model_validate(execute_plan(assignments=[]))
-
-
-def test_execute_extra_assignment_rejected():
-    with pytest.raises(ValidationError):
-        ManagerRoutingPlan.model_validate(
-            execute_plan(assignments=[{"agent": "css", "task": "Style."}, {"agent": "html", "task": "Markup."}])
-        )
-
-
-def test_execute_blank_criteria_rejected():
-    with pytest.raises(ValidationError):
-        ManagerRoutingPlan.model_validate(execute_plan(acceptance_criteria=["Looks better", "  "]))
-
-
-def test_unknown_qa_specialist_rejected():
-    with pytest.raises(ValidationError):
-        ManagerRoutingPlan.model_validate(
-            execute_plan(
-                selected_specialists=["qa"],
-                assignments=[{"agent": "qa", "task": "Review it."}],
-            )
-        )
-
-
-def test_execute_contradictory_clarification_rejected():
-    with pytest.raises(ValidationError):
-        ManagerRoutingPlan.model_validate(execute_plan(clarification_question="Which page?"))
+    assert [assignment.agent for assignment in plan.assignments] == ["html", "css"]
 
 
 def test_clarification_required_valid():
-    plan = ManagerRoutingPlan.model_validate(
-        {
-            "status": "clarification_required",
-            "request_type": "ambiguous",
-            "selected_specialists": [],
-            "routing_rationale": None,
-            "assignments": [],
-            "acceptance_criteria": [],
-            "clarification_question": "Which page should change?",
-            "rejection_reason": None,
-        }
-    )
+    plan = ManagerRoutingPlan.model_validate(clarification_plan())
 
-    assert plan.clarification_question == "Which page should change?"
-
-
-def test_clarification_required_rejects_execution_fields():
-    with pytest.raises(ValidationError):
-        ManagerRoutingPlan.model_validate(
-            {
-                "status": "clarification_required",
-                "request_type": "ambiguous",
-                "selected_specialists": ["html"],
-                "routing_rationale": None,
-                "assignments": [{"agent": "html", "task": "Change copy."}],
-                "acceptance_criteria": [],
-                "clarification_question": "Which copy?",
-                "rejection_reason": None,
-            }
-        )
-
-
-def test_clarification_required_rejects_rejection_reason():
-    with pytest.raises(ValidationError):
-        ManagerRoutingPlan.model_validate(
-            {
-                "status": "clarification_required",
-                "request_type": "ambiguous",
-                "selected_specialists": [],
-                "routing_rationale": None,
-                "assignments": [],
-                "acceptance_criteria": [],
-                "clarification_question": "Which page?",
-                "rejection_reason": "Unsupported.",
-            }
-        )
+    assert plan.clarification_question == "Which page and element should change?"
 
 
 def test_out_of_scope_valid():
-    plan = ManagerRoutingPlan.model_validate(
-        {
-            "status": "out_of_scope",
-            "request_type": "backend",
-            "selected_specialists": [],
-            "routing_rationale": None,
-            "assignments": [],
-            "acceptance_criteria": [],
-            "clarification_question": None,
-            "rejection_reason": "Backend work is outside Phase 1.",
-        }
+    plan = ManagerRoutingPlan.model_validate(out_of_scope_plan())
+
+    assert plan.rejection_reason == "Backend work is not supported."
+
+
+def test_execute_requires_selected_specialists():
+    assert_invalid(execute_plan(selected_specialists=[], assignments=[]))
+
+
+def test_execute_duplicate_specialists_rejected():
+    assert_invalid(
+        execute_plan(
+            selected_specialists=["css", "css"],
+            assignments=[{"agent": "css", "task": "Update button color."}],
+        )
     )
 
-    assert plan.rejection_reason == "Backend work is outside Phase 1."
+
+def test_execute_missing_assignment_rejected():
+    assert_invalid(execute_plan(assignments=[]))
 
 
-def test_out_of_scope_rejects_clarification_question():
-    with pytest.raises(ValidationError):
-        ManagerRoutingPlan.model_validate(
-            {
-                "status": "out_of_scope",
-                "request_type": "backend",
-                "selected_specialists": [],
-                "routing_rationale": None,
-                "assignments": [],
-                "acceptance_criteria": [],
-                "clarification_question": "Which backend?",
-                "rejection_reason": "Backend work is unsupported.",
-            }
+def test_execute_assignment_for_unselected_agent_rejected():
+    assert_invalid(
+        execute_plan(assignments=[{"agent": "html", "task": "Change markup."}])
+    )
+
+
+def test_execute_duplicate_assignment_rejected():
+    assert_invalid(
+        execute_plan(
+            assignments=[
+                {"agent": "css", "task": "Update button color."},
+                {"agent": "css", "task": "Update link color."},
+            ]
         )
+    )
 
 
-def test_json_serialization_is_clean():
+def test_blank_rationale_rejected():
+    assert_invalid(execute_plan(routing_rationale=" "))
+
+
+def test_blank_criteria_rejected():
+    assert_invalid(execute_plan(acceptance_criteria=["Looks better", "  "]))
+
+
+def test_duplicate_criteria_case_variation_rejected():
+    assert_invalid(execute_plan(acceptance_criteria=["Button updated", " button UPDATED "]))
+
+
+def test_clarification_rejects_specialists():
+    assert_invalid(
+        clarification_plan(
+            selected_specialists=["html"],
+            assignments=[{"agent": "html", "task": "Change copy."}],
+        )
+    )
+
+
+def test_clarification_missing_question_rejected():
+    assert_invalid(clarification_plan(clarification_question=None))
+
+
+def test_out_of_scope_missing_rejection_reason_rejected():
+    assert_invalid(out_of_scope_plan(rejection_reason=None))
+
+
+def test_contradictory_clarification_and_rejection_fields_rejected():
+    assert_invalid(clarification_plan(rejection_reason="Unsupported."))
+    assert_invalid(out_of_scope_plan(clarification_question="Which backend?"))
+    assert_invalid(execute_plan(clarification_question="Which page?"))
+    assert_invalid(execute_plan(rejection_reason="Unsupported."))
+
+
+def test_unknown_qa_specialist_rejected():
+    assert_invalid(
+        execute_plan(
+            selected_specialists=["qa"],
+            assignments=[{"agent": "qa", "task": "Review it."}],
+        )
+    )
+
+
+def test_extra_unknown_fields_rejected():
+    assert_invalid(execute_plan(extra_field="nope"))
+
+
+def test_json_round_trip_is_clean():
     plan = ManagerRoutingPlan.model_validate(
         execute_plan(
             selected_specialists=["html", "css"],
@@ -166,6 +187,8 @@ def test_json_serialization_is_clean():
 
     encoded = plan.model_dump_json()
     decoded = json.loads(encoded)
+    restored = ManagerRoutingPlan.model_validate_json(encoded)
 
     assert decoded["status"] == "execute"
     assert decoded["selected_specialists"] == ["html", "css"]
+    assert restored == plan

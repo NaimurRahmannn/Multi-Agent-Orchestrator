@@ -5,12 +5,10 @@ import os
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = PROJECT_ROOT / "src"
@@ -18,77 +16,76 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from agentorchestra.config import ConfigurationError, get_settings
-from agentorchestra.models import ManagerRoutingPlan, RoutingStatus, SpecialistName
+from agentorchestra.models import (
+    ManagerRoutingPlan,
+    RoutingEvidenceCase,
+    RoutingEvidenceResult,
+    RoutingStatus,
+    SpecialistName,
+    TokenUsage,
+    evaluate_routing_match,
+)
 
-
-@dataclass(frozen=True)
-class RoutingCase:
-    name: str
-    request: str
-    expected_status: RoutingStatus
-    expected_specialists: tuple[SpecialistName, ...]
-
-
-CASES: tuple[RoutingCase, ...] = (
-    RoutingCase(
-        "css_only",
-        "Make the buttons use a darker teal background and slightly larger text.",
-        RoutingStatus.EXECUTE,
-        (SpecialistName.CSS,),
+CASES: tuple[RoutingEvidenceCase, ...] = (
+    RoutingEvidenceCase(
+        case_id="css_only",
+        request="Make the buttons use a darker teal background and slightly larger text.",
+        expected_status=RoutingStatus.EXECUTE,
+        expected_specialists=[SpecialistName.CSS],
     ),
-    RoutingCase(
-        "html_only",
-        "Fix the contact form so the email label is clearly connected to the email field.",
-        RoutingStatus.EXECUTE,
-        (SpecialistName.HTML,),
+    RoutingEvidenceCase(
+        case_id="html_only",
+        request="Fix the contact form so the email label is clearly connected to the email field.",
+        expected_status=RoutingStatus.EXECUTE,
+        expected_specialists=[SpecialistName.HTML],
     ),
-    RoutingCase(
-        "html_css",
-        "Add a small services note to the homepage and style it so it stands apart.",
-        RoutingStatus.EXECUTE,
-        (SpecialistName.HTML, SpecialistName.CSS),
+    RoutingEvidenceCase(
+        case_id="html_css",
+        request="Add a small services note to the homepage and style it so it stands apart.",
+        expected_status=RoutingStatus.EXECUTE,
+        expected_specialists=[SpecialistName.HTML, SpecialistName.CSS],
     ),
-    RoutingCase(
-        "backend_unsupported",
-        "Create a backend endpoint that stores contact form submissions in a database.",
-        RoutingStatus.OUT_OF_SCOPE,
-        (),
+    RoutingEvidenceCase(
+        case_id="backend_unsupported",
+        request="Create a backend endpoint that stores contact form submissions in a database.",
+        expected_status=RoutingStatus.OUT_OF_SCOPE,
+        expected_specialists=[],
     ),
-    RoutingCase(
-        "ambiguous",
-        "Make the website pop more.",
-        RoutingStatus.CLARIFICATION_REQUIRED,
-        (),
+    RoutingEvidenceCase(
+        case_id="ambiguous",
+        request="Make the website pop more.",
+        expected_status=RoutingStatus.CLARIFICATION_REQUIRED,
+        expected_specialists=[],
     ),
-    RoutingCase(
-        "alt_text",
-        "Improve the alt text for the lighthouse image on the about page.",
-        RoutingStatus.EXECUTE,
-        (SpecialistName.HTML,),
+    RoutingEvidenceCase(
+        case_id="alt_text",
+        request="Improve the alt text for the lighthouse image on the about page.",
+        expected_status=RoutingStatus.EXECUTE,
+        expected_specialists=[SpecialistName.HTML],
     ),
-    RoutingCase(
-        "seo_diagnosis",
-        "Diagnose the homepage for basic on-page SEO issues.",
-        RoutingStatus.EXECUTE,
-        (SpecialistName.SEO,),
+    RoutingEvidenceCase(
+        case_id="seo_diagnosis",
+        request="Diagnose the homepage for basic on-page SEO issues.",
+        expected_status=RoutingStatus.EXECUTE,
+        expected_specialists=[SpecialistName.SEO],
     ),
-    RoutingCase(
-        "seo_css",
-        "Improve the homepage title for SEO and make the hero call-to-action more prominent.",
-        RoutingStatus.EXECUTE,
-        (SpecialistName.SEO, SpecialistName.CSS),
+    RoutingEvidenceCase(
+        case_id="seo_css",
+        request="Improve the homepage title for SEO and make the hero call-to-action more prominent.",
+        expected_status=RoutingStatus.EXECUTE,
+        expected_specialists=[SpecialistName.SEO, SpecialistName.CSS],
     ),
-    RoutingCase(
-        "title_meta",
-        "Update the about page title and meta description for search results.",
-        RoutingStatus.EXECUTE,
-        (SpecialistName.SEO,),
+    RoutingEvidenceCase(
+        case_id="title_meta",
+        request="Update the about page title and meta description for search results.",
+        expected_status=RoutingStatus.EXECUTE,
+        expected_specialists=[SpecialistName.SEO],
     ),
-    RoutingCase(
-        "clear_css",
-        "Increase the spacing between navigation links.",
-        RoutingStatus.EXECUTE,
-        (SpecialistName.CSS,),
+    RoutingEvidenceCase(
+        case_id="clear_css",
+        request="Increase the spacing between navigation links.",
+        expected_status=RoutingStatus.EXECUTE,
+        expected_specialists=[SpecialistName.CSS],
     ),
 )
 
@@ -106,12 +103,12 @@ Return raw JSON only. Do not wrap it in Markdown.
 
 OUTPUT_CONTRACT = """
 Return exactly one compact JSON object:
-{"status":"execute|clarification_required|out_of_scope","request_type":"short category","selected_specialists":["html|css|seo"],"routing_rationale":"string or null","assignments":[{"agent":"html|css|seo","task":"short task"}],"acceptance_criteria":["short criterion"],"clarification_question":"string or null","rejection_reason":"string or null"}
+{"status":"execute|clarification_required|out_of_scope","request_type":"short category","selected_specialists":["html|css|seo"],"routing_rationale":"short explanation","assignments":[{"agent":"html|css|seo","task":"short task"}],"acceptance_criteria":["short criterion"],"clarification_question":"string or null","rejection_reason":"string or null"}
 
 Rules:
 - execute: selected_specialists and assignments are non-empty, one assignment per selected specialist, acceptance_criteria non-empty, routing_rationale non-empty, clarification_question null, rejection_reason null.
-- clarification_required: selected_specialists, assignments, and acceptance_criteria empty; clarification_question non-empty; rejection_reason null.
-- out_of_scope: selected_specialists, assignments, and acceptance_criteria empty; rejection_reason non-empty; clarification_question null.
+- clarification_required: selected_specialists, assignments, and acceptance_criteria empty; routing_rationale non-empty; clarification_question non-empty; rejection_reason null.
+- out_of_scope: selected_specialists, assignments, and acceptance_criteria empty; routing_rationale non-empty; rejection_reason non-empty; clarification_question null.
 - assignments must always be an array, never an object keyed by specialist.
 - Use request_type values like css_change, html_repair, seo_diagnosis, unsupported_backend, or ambiguous_request. Do not copy placeholder text.
 - HTML owns labels, attributes, alt text, and markup. CSS owns visual style only. SEO owns title, meta description, heading diagnosis, and search-result metadata.
@@ -162,6 +159,14 @@ def _extract_usage(*sources: Any) -> dict[str, Any]:
     return {}
 
 
+def _token_usage_from_raw(raw_usage: dict[str, Any]) -> TokenUsage:
+    return TokenUsage(
+        prompt_tokens=raw_usage.get("prompt_tokens"),
+        completion_tokens=raw_usage.get("completion_tokens"),
+        total_tokens=raw_usage.get("total_tokens"),
+    )
+
+
 def _extract_json_object(raw: str) -> str:
     stripped = raw.strip()
     if stripped.startswith("```"):
@@ -181,7 +186,7 @@ def _extract_plan(raw: str) -> ManagerRoutingPlan:
     return ManagerRoutingPlan.model_validate_json(_extract_json_object(raw))
 
 
-def _build_messages(case: RoutingCase, feedback: str | None = None) -> list[dict[str, str]]:
+def _build_messages(case: RoutingEvidenceCase, feedback: str | None = None) -> list[dict[str, str]]:
     feedback_text = f"\n\nPrevious attempt failed: {feedback}" if feedback else ""
     return [
         {"role": "system", "content": SYSTEM_GUIDANCE.strip()},
@@ -204,7 +209,7 @@ def _short_error(exc: Exception) -> str:
 
 def _generate_plan_with_retries(
     llm: Any,
-    case: RoutingCase,
+    case: RoutingEvidenceCase,
     manager: Any,
 ) -> tuple[str, ManagerRoutingPlan, int]:
     attempts = int(os.getenv("MANAGER_LLM_MAX_ATTEMPTS", "3"))
@@ -230,10 +235,40 @@ def _generate_plan_with_retries(
     raise last_error
 
 
-def _run_case(case: RoutingCase, settings: Any) -> dict[str, Any]:
+def _trial_from_result(result: RoutingEvidenceResult, attempts: int | None = None) -> dict[str, Any]:
+    token_usage = result.token_usage.model_dump(mode="json")
+    if all(value is None for value in token_usage.values()):
+        token_usage = {}
+    trial = {
+        "case": result.case_id,
+        "request": result.request,
+        "expected_route": {
+            "status": result.expected_status.value,
+            "specialists": [specialist.value for specialist in result.expected_specialists],
+        },
+        "actual_route": None
+        if result.actual_status is None
+        else {
+            "status": result.actual_status.value,
+            "specialists": [specialist.value for specialist in result.actual_specialists],
+        },
+        "routing_rationale": result.routing_rationale,
+        "structural_validity": result.structurally_valid,
+        "routing_correctness": result.routing_correct,
+        "latency_seconds": None if result.latency_ms is None else result.latency_ms / 1000,
+        "token_usage": token_usage,
+    }
+    if attempts is not None:
+        trial["attempts"] = attempts
+    if result.validation_error:
+        trial["error"] = result.validation_error
+    return trial
+
+
+def _run_case(case: RoutingEvidenceCase, settings: Any) -> dict[str, Any]:
     _localize_crewai_paths()
     _configure_groq_environment(settings)
-    from crewai import Agent, LLM
+    from crewai import LLM, Agent
 
     _disable_crewai_prompt_cache_breakpoints()
 
@@ -259,30 +294,23 @@ def _run_case(case: RoutingCase, settings: Any) -> dict[str, Any]:
 
     started = time.perf_counter()
     raw_response, plan, attempts = _generate_plan_with_retries(llm, case, manager)
-    latency_seconds = round(time.perf_counter() - started, 3)
-    actual_specialists = tuple(plan.selected_specialists)
-    routing_correct = (
-        plan.status == case.expected_status and set(actual_specialists) == set(case.expected_specialists)
+    latency_ms = round((time.perf_counter() - started) * 1000)
+    result = RoutingEvidenceResult(
+        case_id=case.case_id,
+        request=case.request,
+        expected_status=case.expected_status,
+        expected_specialists=case.expected_specialists,
+        actual_status=plan.status,
+        actual_specialists=plan.selected_specialists,
+        routing_rationale=plan.routing_rationale,
+        structurally_valid=True,
+        routing_correct=evaluate_routing_match(case, plan),
+        latency_ms=latency_ms,
+        token_usage=_token_usage_from_raw(_extract_usage(llm)),
     )
-    return {
-        "case": case.name,
-        "request": case.request,
-        "expected_route": {
-            "status": case.expected_status.value,
-            "specialists": [specialist.value for specialist in case.expected_specialists],
-        },
-        "actual_route": {
-            "status": plan.status.value,
-            "specialists": [specialist.value for specialist in actual_specialists],
-        },
-        "routing_rationale": plan.routing_rationale,
-        "structural_validity": True,
-        "routing_correctness": routing_correct,
-        "latency_seconds": latency_seconds,
-        "attempts": attempts,
-        "token_usage": _extract_usage(llm),
-        "plan": plan.model_dump(mode="json"),
-    }
+    trial = _trial_from_result(result, attempts=attempts)
+    trial["plan"] = plan.model_dump(mode="json")
+    return trial
 
 
 def main() -> int:
@@ -301,41 +329,41 @@ def main() -> int:
         try:
             trial = _run_case(case, settings)
         except (ValidationError, ValueError) as exc:
-            trial = {
-                "case": case.name,
-                "request": case.request,
-                "expected_route": {
-                    "status": case.expected_status.value,
-                    "specialists": [specialist.value for specialist in case.expected_specialists],
-                },
-                "actual_route": None,
-                "routing_rationale": None,
-                "structural_validity": False,
-                "routing_correctness": False,
-                "latency_seconds": None,
-                "token_usage": {},
-                "error": str(exc),
-            }
+            result = RoutingEvidenceResult(
+                case_id=case.case_id,
+                request=case.request,
+                expected_status=case.expected_status,
+                expected_specialists=case.expected_specialists,
+                actual_status=None,
+                actual_specialists=[],
+                routing_rationale=None,
+                structurally_valid=False,
+                routing_correct=False,
+                latency_ms=None,
+                token_usage=TokenUsage(),
+                validation_error=str(exc),
+            )
+            trial = _trial_from_result(result)
         except Exception as exc:
-            trial = {
-                "case": case.name,
-                "request": case.request,
-                "expected_route": {
-                    "status": case.expected_status.value,
-                    "specialists": [specialist.value for specialist in case.expected_specialists],
-                },
-                "actual_route": None,
-                "routing_rationale": None,
-                "structural_validity": False,
-                "routing_correctness": False,
-                "latency_seconds": None,
-                "token_usage": {},
-                "error": f"Live manager request failed: {exc}",
-            }
+            result = RoutingEvidenceResult(
+                case_id=case.case_id,
+                request=case.request,
+                expected_status=case.expected_status,
+                expected_specialists=case.expected_specialists,
+                actual_status=None,
+                actual_specialists=[],
+                routing_rationale=None,
+                structurally_valid=False,
+                routing_correct=False,
+                latency_ms=None,
+                token_usage=TokenUsage(),
+                validation_error=f"Live manager request failed: {exc}",
+            )
+            trial = _trial_from_result(result)
         trials.append(trial)
         marker = "valid" if trial["structural_validity"] else "invalid"
         route = "matched" if trial["routing_correctness"] else "mismatched"
-        print(f"{case.name}: structure={marker}, route={route}")
+        print(f"{case.case_id}: structure={marker}, route={route}")
         time.sleep(float(os.getenv("MANAGER_CASE_DELAY_SECONDS", "10.0")))
 
     output_path = PROJECT_ROOT / "reports" / "routing" / "phase1_manager_trials.json"
