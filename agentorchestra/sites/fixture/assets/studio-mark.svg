@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-labelledby="title desc">
+  <title id="title">Harbor Light Studio mark</title>
+  <desc id="desc">A simple lighthouse shape above curved harbor waves.</desc>
+  <rect width="240" height="240" rx="24" fill="#eef6f1"/>
+  <path d="M74 190c20-14 42-14 64 0 18 12 35 12 52 0" fill="none" stroke="#0f766e" stroke-width="12" stroke-linecap="round"/>
+  <path d="M92 168h56l-10-92H102z" fill="#ffffff" stroke="#1d2a2f" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M88 78h64l-13-30h-38z" fill="#ffd166" stroke="#1d2a2f" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M112 104h16v28h-16z" fill="#0f766e"/>
+  <path d="M52 74l34-16M188 74l-34-16M120 30V14" stroke="#f59e0b" stroke-width="10" stroke-linecap="round"/>
+</svg>

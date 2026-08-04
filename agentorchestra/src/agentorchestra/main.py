@@ -1,64 +1,38 @@
 #!/usr/bin/env python
-from pathlib import Path
 
 from pydantic import BaseModel
 
 from crewai.flow import Flow, listen, start
 
-from agentorchestra.crews.content_crew.content_crew import ContentCrew
+
+class PhaseOneState(BaseModel):
+    readiness_message: str = ""
 
 
-class ContentState(BaseModel):
-    topic: str = ""
-    outline: str = ""
-    draft: str = ""
-    final_post: str = ""
-
-
-class ContentFlow(Flow[ContentState]):
+class PhaseOneFlow(Flow[PhaseOneState]):
+    """Minimal generated Flow entry point kept runnable for Phase 1."""
 
     @start()
-    def plan_content(self, crewai_trigger_payload: dict = None):
-        print("Planning content")
-
-        if crewai_trigger_payload:
-            self.state.topic = crewai_trigger_payload.get("topic", "AI Agents")
-            print(f"Using trigger payload: {crewai_trigger_payload}")
-        else:
-            self.state.topic = "AI Agents"
-
-        print(f"Topic: {self.state.topic}")
-
-    @listen(plan_content)
-    def generate_content(self):
-        print(f"Generating content on: {self.state.topic}")
-        result = (
-            ContentCrew()
-            .crew()
-            .kickoff(inputs={"topic": self.state.topic})
+    def prepare(self, crewai_trigger_payload: dict | None = None) -> None:
+        self.state.readiness_message = (
+            "AgentOrchestra Phase 1 foundation is installed. "
+            "Run scripts/feasibility checks for live environment evidence."
         )
 
-        print("Content generated")
-        self.state.final_post = result.raw
-
-    @listen(generate_content)
-    def save_content(self):
-        print("Saving content")
-        output_dir = Path("output")
-        output_dir.mkdir(exist_ok=True)
-        with open(output_dir / "post.md", "w") as f:
-            f.write(self.state.final_post)
-        print("Post saved to output/post.md")
+    @listen(prepare)
+    def report(self) -> str:
+        print(self.state.readiness_message)
+        return self.state.readiness_message
 
 
 def kickoff():
-    content_flow = ContentFlow()
-    content_flow.kickoff()
+    phase_one_flow = PhaseOneFlow()
+    return phase_one_flow.kickoff()
 
 
 def plot():
-    content_flow = ContentFlow()
-    content_flow.plot()
+    phase_one_flow = PhaseOneFlow()
+    phase_one_flow.plot()
 
 
 def run_with_trigger():
@@ -76,10 +50,10 @@ def run_with_trigger():
     except json.JSONDecodeError:
         raise Exception("Invalid JSON payload provided as argument")
 
-    content_flow = ContentFlow()
+    phase_one_flow = PhaseOneFlow()
 
     try:
-        result = content_flow.kickoff({"crewai_trigger_payload": trigger_payload})
+        result = phase_one_flow.kickoff({"crewai_trigger_payload": trigger_payload})
         return result
     except Exception as e:
         raise Exception(f"An error occurred while running the flow with trigger: {e}")

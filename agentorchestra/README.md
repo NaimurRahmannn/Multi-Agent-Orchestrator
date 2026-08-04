@@ -1,56 +1,93 @@
-# {{crew_name}} Crew
+# AgentOrchestra
 
-Welcome to the {{crew_name}} Crew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
+AgentOrchestra is a phase-by-phase CrewAI evaluation project for routing natural-language requests to specialist agents that edit a small static HTML/CSS website.
 
-## Installation
+The central architecture rule is: **Manager decides what should run. Flow decides what actually runs.**
 
-Ensure you have Python >=3.10 <3.14 installed on your system. This project uses [UV](https://docs.astral.sh/uv/) for dependency management and package handling, offering a seamless setup and execution experience.
+## Phase 1 Status
 
-First, if you haven't already, install uv:
+Phase 1 implements project foundation and feasibility only:
+
+- Typed environment configuration for Groq-backed operations.
+- Strict Pydantic routing models for Manager output.
+- A fixed local static sample site in `sites/fixture` with an identical starting copy in `sites/working`.
+- Manual feasibility checks for CrewAI imports, Groq connectivity, structured Manager output, Lighthouse SEO-only execution, and Playwright Chromium screenshots.
+- Deterministic tests that do not call Groq, Lighthouse, or browser automation.
+
+Production Manager, HTML, CSS, SEO, QA agents, the staged editing pipeline, full Flow orchestration, patch tools, and Streamlit UI are not implemented yet.
+
+## Prerequisites
+
+- Python `>=3.10,<3.14` with the existing project virtual environment.
+- Node.js, npm, and npx.
+- Local Chromium installed for Playwright.
+- Lighthouse installed through this app root's Node dependencies.
+
+## Setup
+
+Do not recreate the virtual environment if it already exists. From this `agentorchestra` directory:
 
 ```bash
-pip install uv
+cp .env.example .env
 ```
 
-Next, navigate to your project directory and install the dependencies:
+Fill in `.env` only when running live Groq checks:
 
-(Optional) Lock the dependencies and install them by using the CLI command:
+```text
+GROQ_API_KEY=
+GROQ_MODEL=
+APP_ENV=development
+LOG_LEVEL=INFO
+```
+
+Install Python dependencies with the project toolchain:
+
 ```bash
 crewai install
 ```
 
-### Customizing
-
-**Add your `OPENAI_API_KEY` into the `.env` file**
-
-- Modify `src/agentorchestra/config/agents.yaml` to define your agents
-- Modify `src/agentorchestra/config/tasks.yaml` to define your tasks
-- Modify `src/agentorchestra/crew.py` to add your own logic, tools and specific args
-- Modify `src/agentorchestra/main.py` to add custom inputs for your agents and tasks
-
-## Running the Project
-
-To kickstart your flow and begin execution, run this from the root folder of your project:
+Install Node dependencies for Lighthouse from this app root:
 
 ```bash
-crewai run
+npm install
 ```
 
-This command initializes the agentorchestra Flow as defined in your configuration.
+Install Playwright Chromium:
 
-This example, unmodified, will run a content creation flow on AI Agents and save the output to `output/post.md`.
+```bash
+playwright install chromium
+```
 
-## Understanding Your Crew
+## Feasibility Checks
 
-The agentorchestra Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
+Run these from the `agentorchestra` directory.
 
-## Support
+```bash
+python scripts/feasibility/check_environment.py
+python scripts/feasibility/check_groq.py
+python scripts/feasibility/check_manager_output.py
+python scripts/feasibility/check_lighthouse.py
+python scripts/feasibility/check_playwright.py
+```
 
-For support, questions, or feedback regarding the {{crew_name}} Crew or crewAI.
+Live Groq checks consume a small number of tokens. Automated tests do not use real API tokens.
 
-- Visit our [documentation](https://docs.crewai.com)
-- Reach out to us through our [GitHub repository](https://github.com/joaomdmoura/crewai)
-- [Join our Discord](https://discord.com/invite/X4JWnZnxPb)
-- [Chat with our docs](https://chatg.pt/DWjSBZn)
+Expected generated outputs:
 
-Let's create wonders together with the power and simplicity of crewAI.
+- `reports/routing/phase1_manager_trials.json`
+- `reports/lighthouse/phase1-seo.json`
+- `reports/screenshots/phase1-index.png`
+
+## Tests And Linting
+
+```bash
+pytest -q
+pytest --cov=agentorchestra --cov-report=term-missing
+ruff check .
+```
+
+## Sample Site
+
+The initial static site lives in `sites/fixture`. `sites/working` starts as an identical copy and will become the accepted editable version in later phases. `sites/staging` is intentionally empty except for `.gitkeep`.
+
+The site has no JavaScript, remote fonts, CDNs, remote images, or backend behavior.
