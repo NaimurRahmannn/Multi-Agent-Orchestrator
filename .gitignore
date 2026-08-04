@@ -1,0 +1,36 @@
+venv/
+.venv/
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+
+# Environment secrets
+.env
+
+# Node
+node_modules/
+
+# Generated reports
+reports/screenshots/*
+reports/lighthouse/*
+reports/routing/*
+
+# Preserve empty report directories
+!reports/screenshots/.gitkeep
+!reports/lighthouse/.gitkeep
+!reports/routing/.gitkeep
+
+# Temporary staged websites
+sites/staging/*
+!sites/staging/.gitkeep
+
+# Operating system and IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
