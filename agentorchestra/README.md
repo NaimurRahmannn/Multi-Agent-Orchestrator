@@ -1,12 +1,12 @@
 # AgentOrchestra
 
-AgentOrchestra is a phase-by-phase CrewAI evaluation project for routing natural-language requests to specialist agents that edit a small static HTML/CSS website.
+AgentOrchestra is an incremental CrewAI evaluation project for routing natural-language requests to specialist agents that edit a small static HTML/CSS website.
 
 The central architecture rule is: **Manager decides what should run. Flow decides what actually runs.**
 
-## Phase 1 Status
+## Foundation Status
 
-Phase 1 implements project foundation and feasibility only:
+The foundation work implements project setup and feasibility only:
 
 - Typed environment configuration for Groq-backed operations.
 - Strict Pydantic routing models for Manager output.
@@ -14,11 +14,11 @@ Phase 1 implements project foundation and feasibility only:
 - Manual feasibility checks for CrewAI imports, Groq connectivity, structured Manager output, Lighthouse SEO-only execution, and Playwright Chromium screenshots.
 - Deterministic tests that do not call Groq, Lighthouse, or browser automation.
 
-Production HTML, CSS, SEO, QA execution agents, the staged editing pipeline, full Flow orchestration, patch tools, and Streamlit UI are not implemented yet.
+Production HTML, CSS, SEO, QA execution agents, the full Flow orchestration, and Streamlit UI are not implemented yet.
 
-## Phase 2 Status
+## Domain Contracts Status
 
-Phase 2 adds the production configuration and strict domain contracts future phases will use:
+The domain-contract work adds the production configuration and strict models future work will use:
 
 - `EditRequest` validates safe single-page static HTML edit requests.
 - `ManagerRoutingPlan` validates `execute`, `clarification_required`, and `out_of_scope` routing plans.
@@ -29,11 +29,11 @@ Phase 2 adds the production configuration and strict domain contracts future pha
 
 Supported routing statuses are `execute`, `clarification_required`, and `out_of_scope`. Supported specialist names are `html`, `css`, and `seo`; QA is intentionally not a selectable specialist.
 
-These models are contracts only. Production agents, production Flow orchestration, staged patch execution, production Lighthouse services, production Playwright services, and the Streamlit UI are still future-phase work.
+These models are contracts only. Production agents, production Flow orchestration, production Lighthouse services, production Playwright services, and the Streamlit UI are still future work.
 
-## Phase 3 Status
+## Manager Routing Status
 
-Phase 3 adds the production Manager routing layer and benchmark:
+The Manager routing work adds the production Manager routing layer and benchmark:
 
 - A real CrewAI Manager Agent with no tools, no delegation, no memory, and one structured routing task.
 - `ManagerRouter`, which converts an `EditRequest` into a validated `ManagerRoutingPlan`.
@@ -110,7 +110,22 @@ This report path is ignored by Git.
 
 Automated tests use fakes and make no live LLM calls. Live Manager and benchmark commands require `.env` values for `GROQ_API_KEY` and `GROQ_MODEL`, require network access, and consume Groq tokens.
 
-Specialist execution agents, staging, patch application, QA execution, Lighthouse production integration, Playwright production integration, Streamlit UI, and full production Flow orchestration remain unimplemented.
+Specialist execution agents, QA execution, staged-site promotion, Lighthouse production integration, Playwright production integration, Streamlit UI, and full production Flow orchestration remain unimplemented.
+
+## Workspace Tooling Status
+
+The workspace tooling work adds the deterministic staged-workspace and patch tooling layer that future specialists will use:
+
+- `create_staged_copy()` creates one safe server-controlled copy from `sites/working`.
+- `WorkspaceHandle` validates one staged run path under `sites/staging`.
+- `read_file()` reads bounded line ranges from approved staged `.html` and `.css` files.
+- `propose_patch()` applies exact unique-match text replacements and enforces specialist file ownership at runtime.
+- `ReadFileTool` and `ProposePatchTool` are CrewAI-compatible wrappers bound to one workspace, with the handle and specialist identity hidden from tool arguments.
+- `validate_staged_site()` rejects unapproved files, directories, symlinks, and structure drift.
+- `generate_diff()` produces deterministic unified diffs from `sites/working` to the staged run.
+- `scripts/demo_workspace.py` demonstrates staging, reading, patching, diff generation, and cleanup without any Groq call.
+
+Workspace tooling does not add HTML, CSS, SEO, or QA agents. No specialist LLM execution, Manager-to-specialist orchestration, QA acceptance, promotion, browser automation, Lighthouse execution, or UI work is implemented here.
 
 ## Prerequisites
 
@@ -171,12 +186,22 @@ python scripts/feasibility/check_playwright.py
 
 Live Groq checks consume a small number of tokens. Automated tests do not use real API tokens.
 
+## Workspace Demo
+
+Run the deterministic no-LLM staged-workspace demo:
+
+```bash
+python scripts/demo_workspace.py
+```
+
+The demo creates a fixed staged run, reads a bounded CSS slice, applies one CSS patch in staging, prints the unified diff, and cleans up the staged run. It does not modify `sites/working` or `sites/fixture`.
+
 Expected generated outputs:
 
-- `reports/routing/phase1_manager_trials.json`
+- `reports/routing/manager_trials.json`
 - `reports/routing/manager_routing_benchmark.json`
-- `reports/lighthouse/phase1-seo.json`
-- `reports/screenshots/phase1-index.png`
+- `reports/lighthouse/seo.json`
+- `reports/screenshots/index.png`
 
 ## Tests And Linting
 
@@ -202,10 +227,14 @@ pytest tests/test_token_usage_normalization.py -q
 pytest tests/test_routing_cases.py -q
 pytest tests/test_routing_runner.py -q
 pytest tests/test_manager_cli.py -q
+pytest tests/test_workspace_models.py -q
+pytest tests/test_workspace_service.py -q
+pytest tests/test_workspace_tools.py -q
+pytest tests/test_workspace_demo.py -q
 ```
 
 ## Sample Site
 
-The initial static site lives in `sites/fixture`. `sites/working` starts as an identical copy and will become the accepted editable version in later phases. `sites/staging` is intentionally empty except for `.gitkeep`.
+The initial static site lives in `sites/fixture`. `sites/working` starts as an identical copy and will become the accepted editable version in later work. `sites/staging` is intentionally empty except for `.gitkeep`.
 
 The site has no JavaScript, remote fonts, CDNs, remote images, or backend behavior.

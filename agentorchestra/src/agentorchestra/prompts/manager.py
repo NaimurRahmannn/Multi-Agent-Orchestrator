@@ -1,4 +1,4 @@
-"""Manager prompt constants for Phase 3 routing."""
+"""Manager prompt constants for production routing."""
 
 MANAGER_AGENT_ROLE = "AgentOrchestra Manager Routing Agent"
 MANAGER_AGENT_GOAL = (
@@ -12,7 +12,7 @@ MANAGER_AGENT_BACKSTORY = (
 )
 
 MANAGER_SYSTEM_PROMPT = """
-AgentOrchestra Phase 3 Manager responsibilities:
+AgentOrchestra Manager responsibilities:
 
 - Return exactly one ManagerRoutingPlan.
 - Choose status execute, clarification_required, or out_of_scope.

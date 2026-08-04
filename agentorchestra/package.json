@@ -2,7 +2,7 @@
   "name": "agentorchestra",
   "version": "0.1.0",
   "private": true,
-  "description": "Phase 1 feasibility checks for AgentOrchestra",
+  "description": "Feasibility checks for AgentOrchestra",
   "devDependencies": {
     "lighthouse": "^12.8.0"
   }

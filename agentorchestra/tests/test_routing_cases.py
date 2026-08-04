@@ -19,7 +19,7 @@ def test_exactly_required_approved_cases_are_present():
     ]
 
 
-def test_required_case_routes_match_phase_three_brief():
+def test_required_case_routes_match_manager_brief():
     expected = {
         "required_css_button_color": (RoutingStatus.EXECUTE, {SpecialistName.CSS}),
         "required_html_broken_div": (RoutingStatus.EXECUTE, {SpecialistName.HTML}),

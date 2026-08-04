@@ -17,7 +17,8 @@ class AgentOrchestraStatusFlow(Flow[AgentOrchestraStatusState]):
             "AgentOrchestra Manager routing is available. "
             "Run scripts/run_manager.py for one routing request or "
             "scripts/run_routing_benchmark.py for the approved benchmark. "
-            "Specialist execution, staging, QA, and UI orchestration are future phases."
+            "Staged workspace tools are available. "
+            "Specialist execution, QA, promotion, and UI orchestration are future work."
         )
 
     @listen(prepare)

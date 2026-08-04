@@ -15,7 +15,7 @@ from scripts.feasibility._preview_server import preview_server
 
 def main() -> int:
     site_root = PROJECT_ROOT / "sites" / "fixture"
-    output_path = PROJECT_ROOT / "reports" / "lighthouse" / "phase1-seo.json"
+    output_path = PROJECT_ROOT / "reports" / "lighthouse" / "seo.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     chrome_flags = os.getenv("LIGHTHOUSE_CHROME_FLAGS", "").strip()
 

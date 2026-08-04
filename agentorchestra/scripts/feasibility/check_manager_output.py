@@ -187,7 +187,7 @@ def main() -> int:
         print(f"{case.case_id}: structure={marker}, route={route}")
         time.sleep(float(os.getenv("MANAGER_CASE_DELAY_SECONDS", "10.0")))
 
-    output_path = PROJECT_ROOT / "reports" / "routing" / "phase1_manager_trials.json"
+    output_path = PROJECT_ROOT / "reports" / "routing" / "manager_trials.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps({"trials": trials}, indent=2, sort_keys=True), encoding="utf-8")
 

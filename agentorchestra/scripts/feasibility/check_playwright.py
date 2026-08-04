@@ -14,7 +14,7 @@ from scripts.feasibility._preview_server import preview_server
 
 def main() -> int:
     site_root = PROJECT_ROOT / "sites" / "fixture"
-    output_path = PROJECT_ROOT / "reports" / "screenshots" / "phase1-index.png"
+    output_path = PROJECT_ROOT / "reports" / "screenshots" / "index.png"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:

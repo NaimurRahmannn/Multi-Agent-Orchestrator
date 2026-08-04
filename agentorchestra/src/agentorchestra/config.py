@@ -104,7 +104,7 @@ class Settings(BaseSettings):
         )
 
     def require_groq(self) -> None:
-        """Backward-compatible Phase 1 Groq configuration validation."""
+        """Backward-compatible Groq configuration validation."""
         self.require_groq_configuration()
 
     @property
