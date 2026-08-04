@@ -105,15 +105,16 @@ Return raw JSON only. Do not wrap it in Markdown.
 
 
 OUTPUT_CONTRACT = """
-Return exactly one JSON object with these keys:
-status: one of execute, clarification_required, out_of_scope
-request_type: short request category
-selected_specialists: array containing only html, css, seo
-routing_rationale: non-empty string for execute, otherwise null
-assignments: one object per selected specialist, each with agent and task
-acceptance_criteria: non-empty array for execute, empty array otherwise
-clarification_question: non-empty string only for clarification_required, otherwise null
-rejection_reason: non-empty string only for out_of_scope, otherwise null
+Return exactly one compact JSON object:
+{"status":"execute|clarification_required|out_of_scope","request_type":"short category","selected_specialists":["html|css|seo"],"routing_rationale":"string or null","assignments":[{"agent":"html|css|seo","task":"short task"}],"acceptance_criteria":["short criterion"],"clarification_question":"string or null","rejection_reason":"string or null"}
+
+Rules:
+- execute: selected_specialists and assignments are non-empty, one assignment per selected specialist, acceptance_criteria non-empty, routing_rationale non-empty, clarification_question null, rejection_reason null.
+- clarification_required: selected_specialists, assignments, and acceptance_criteria empty; clarification_question non-empty; rejection_reason null.
+- out_of_scope: selected_specialists, assignments, and acceptance_criteria empty; rejection_reason non-empty; clarification_question null.
+- assignments must always be an array, never an object keyed by specialist.
+- Use request_type values like css_change, html_repair, seo_diagnosis, unsupported_backend, or ambiguous_request. Do not copy placeholder text.
+- HTML owns labels, attributes, alt text, and markup. CSS owns visual style only. SEO owns title, meta description, heading diagnosis, and search-result metadata.
 """
 
 
@@ -141,8 +142,16 @@ def _configure_groq_environment(settings: Any) -> None:
     os.environ["GROQ_MODEL_NAME"] = _crewai_model_name(settings.groq_model_value)
 
 
-def _extract_usage(result: Any, crew: Any) -> dict[str, Any]:
-    for source in (result, crew):
+def _disable_crewai_prompt_cache_breakpoints() -> None:
+    """Groq rejects CrewAI's provider-agnostic cache_breakpoint message flag."""
+    _localize_crewai_paths()
+    from crewai.llms import cache as crewai_cache
+
+    crewai_cache.mark_cache_breakpoint = lambda message: message
+
+
+def _extract_usage(*sources: Any) -> dict[str, Any]:
+    for source in sources:
         usage = getattr(source, "token_usage", None) or getattr(source, "usage_metrics", None)
         if usage is None:
             continue
@@ -166,24 +175,74 @@ def _extract_json_object(raw: str) -> str:
     return stripped[start : start + end]
 
 
-def _extract_plan(result: Any, task: Any) -> ManagerRoutingPlan:
-    raw = getattr(result, "raw", None) or getattr(getattr(task, "output", None), "raw", None)
+def _extract_plan(raw: str) -> ManagerRoutingPlan:
     if not raw:
         raise ValueError("CrewAI response did not include raw JSON.")
     return ManagerRoutingPlan.model_validate_json(_extract_json_object(raw))
 
 
+def _build_messages(case: RoutingCase, feedback: str | None = None) -> list[dict[str, str]]:
+    feedback_text = f"\n\nPrevious attempt failed: {feedback}" if feedback else ""
+    return [
+        {"role": "system", "content": SYSTEM_GUIDANCE.strip()},
+        {
+            "role": "user",
+            "content": f"{OUTPUT_CONTRACT.strip()}\n\nRequest: {case.request}{feedback_text}",
+        },
+    ]
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "rate_limit" in message or "rate limit" in message
+
+
+def _short_error(exc: Exception) -> str:
+    message = str(exc).replace("\n", " ").strip()
+    return message[:280]
+
+
+def _generate_plan_with_retries(
+    llm: Any,
+    case: RoutingCase,
+    manager: Any,
+) -> tuple[str, ManagerRoutingPlan, int]:
+    attempts = int(os.getenv("MANAGER_LLM_MAX_ATTEMPTS", "3"))
+    base_delay = float(os.getenv("MANAGER_LLM_RETRY_DELAY_SECONDS", "5.0"))
+    last_error: Exception | None = None
+    feedback: str | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            response = llm.call(messages=_build_messages(case, feedback), from_agent=manager)
+            if not isinstance(response, str) or not response.strip():
+                raise ValueError("CrewAI LLM returned no text.")
+            return response, _extract_plan(response), attempt
+        except Exception as exc:
+            last_error = exc
+            if attempt == attempts:
+                break
+            feedback = _short_error(exc)
+            if _is_rate_limit_error(exc):
+                time.sleep(base_delay * attempt)
+            else:
+                time.sleep(1.0)
+    assert last_error is not None
+    raise last_error
+
+
 def _run_case(case: RoutingCase, settings: Any) -> dict[str, Any]:
     _localize_crewai_paths()
     _configure_groq_environment(settings)
-    from crewai import Agent, Crew, LLM, Process, Task
+    from crewai import Agent, LLM
+
+    _disable_crewai_prompt_cache_breakpoints()
 
     llm = LLM(
         model=os.environ["GROQ_MODEL_NAME"],
         provider="groq",
         api_key=settings.groq_api_key_value,
         temperature=0,
-        max_tokens=450,
+        max_tokens=650,
     )
 
     manager = Agent(
@@ -197,27 +256,10 @@ def _run_case(case: RoutingCase, settings: Any) -> dict[str, Any]:
         verbose=False,
         max_iter=2,
     )
-    task = Task(
-        description=(
-            f"Request: {case.request}\n\n"
-            f"{OUTPUT_CONTRACT}\n"
-            "Keep rationale, assignments, and criteria concise."
-        ),
-        expected_output="A raw JSON object that validates as ManagerRoutingPlan.",
-        agent=manager,
-    )
-    crew = Crew(
-        agents=[manager],
-        tasks=[task],
-        process=Process.sequential,
-        verbose=False,
-        function_calling_llm=llm,
-    )
 
     started = time.perf_counter()
-    result = crew.kickoff()
+    raw_response, plan, attempts = _generate_plan_with_retries(llm, case, manager)
     latency_seconds = round(time.perf_counter() - started, 3)
-    plan = _extract_plan(result, task)
     actual_specialists = tuple(plan.selected_specialists)
     routing_correct = (
         plan.status == case.expected_status and set(actual_specialists) == set(case.expected_specialists)
@@ -237,7 +279,8 @@ def _run_case(case: RoutingCase, settings: Any) -> dict[str, Any]:
         "structural_validity": True,
         "routing_correctness": routing_correct,
         "latency_seconds": latency_seconds,
-        "token_usage": _extract_usage(result, crew),
+        "attempts": attempts,
+        "token_usage": _extract_usage(llm),
         "plan": plan.model_dump(mode="json"),
     }
 
@@ -250,8 +293,11 @@ def main() -> int:
         print(f"FAIL Manager check configuration: {exc}")
         return 1
 
+    case_limit = int(os.getenv("MANAGER_CASE_LIMIT", str(len(CASES))))
+    selected_cases = CASES[:case_limit]
+
     trials: list[dict[str, Any]] = []
-    for case in CASES:
+    for case in selected_cases:
         try:
             trial = _run_case(case, settings)
         except (ValidationError, ValueError) as exc:
@@ -290,7 +336,7 @@ def main() -> int:
         marker = "valid" if trial["structural_validity"] else "invalid"
         route = "matched" if trial["routing_correctness"] else "mismatched"
         print(f"{case.name}: structure={marker}, route={route}")
-        time.sleep(float(os.getenv("MANAGER_CASE_DELAY_SECONDS", "1.0")))
+        time.sleep(float(os.getenv("MANAGER_CASE_DELAY_SECONDS", "10.0")))
 
     output_path = PROJECT_ROOT / "reports" / "routing" / "phase1_manager_trials.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)

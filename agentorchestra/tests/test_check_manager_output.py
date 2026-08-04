@@ -42,3 +42,44 @@ def test_extract_json_object_accepts_prefixed_text():
     raw = 'Here is the plan:\n{"status": "out_of_scope"}\nDone.'
 
     assert MODULE._extract_json_object(raw) == '{"status": "out_of_scope"}'
+
+
+def test_disable_crewai_prompt_cache_breakpoints():
+    MODULE._disable_crewai_prompt_cache_breakpoints()
+
+    from crewai.llms import cache as crewai_cache
+
+    message = {"role": "system", "content": "hello"}
+
+    assert crewai_cache.mark_cache_breakpoint(message) == message
+
+
+def test_generate_plan_retries_after_invalid_json(monkeypatch):
+    class FakeLlm:
+        def __init__(self):
+            self.calls = 0
+
+        def call(self, messages, from_agent):
+            self.calls += 1
+            if self.calls == 1:
+                return "not json"
+            return (
+                '{"status":"execute","request_type":"css_change",'
+                '"selected_specialists":["css"],'
+                '"routing_rationale":"CSS-only visual change.",'
+                '"assignments":[{"agent":"css","task":"Update button color."}],'
+                '"acceptance_criteria":["Button color is updated."],'
+                '"clarification_question":null,"rejection_reason":null}'
+            )
+
+    monkeypatch.setenv("MANAGER_LLM_MAX_ATTEMPTS", "2")
+
+    raw, plan, attempts = MODULE._generate_plan_with_retries(
+        FakeLlm(),
+        MODULE.CASES[0],
+        manager=object(),
+    )
+
+    assert raw.startswith('{"status"')
+    assert plan.status == "execute"
+    assert attempts == 2
