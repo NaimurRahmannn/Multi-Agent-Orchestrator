@@ -1,7 +1,16 @@
 import pytest
 from pydantic import ValidationError
 
-from agentorchestra.workspace_models import FileReadResult, WorkspaceHandle
+from agentorchestra.workspace_models import (
+    DiffReport,
+    FileDiff,
+    FileReadResult,
+    PatchExecutionResult,
+    PatchRejectionReason,
+    PatchStatus,
+    WorkspaceHandle,
+    WorkspaceLimits,
+)
 
 
 def handle_payload(tmp_path, **overrides):
@@ -72,3 +81,109 @@ def test_file_read_result_rejects_inaccurate_range_metadata():
             total_lines=5,
             content="",
         )
+
+
+def test_workspace_limits_are_immutable_and_validate_positive_values():
+    limits = WorkspaceLimits(max_file_bytes=10)
+
+    with pytest.raises(ValidationError):
+        limits.max_file_bytes = 20
+    with pytest.raises(ValidationError):
+        WorkspaceLimits(max_file_bytes=0)
+
+
+def test_applied_patch_result_requires_and_round_trips_rich_evidence():
+    result = PatchExecutionResult(
+        status=PatchStatus.APPLIED,
+        file="style.css",
+        specialist="css",
+        summary="Change color.",
+        match_count=1,
+        replacements=1,
+        bytes_before=10,
+        bytes_after=12,
+        before_sha256="a" * 64,
+        after_sha256="b" * 64,
+        rejection_reason=None,
+        message="Patch applied atomically.",
+    )
+
+    restored = PatchExecutionResult.model_validate_json(result.model_dump_json())
+
+    assert restored == result
+    assert restored.before_sha256 != restored.after_sha256
+    assert restored.rejection_reason is None
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"match_count": 2},
+        {"replacements": 0},
+        {"after_sha256": "a" * 64},
+        {"rejection_reason": PatchRejectionReason.NO_OP},
+    ],
+)
+def test_applied_patch_result_rejects_inconsistent_evidence(overrides):
+    payload = {
+        "status": PatchStatus.APPLIED,
+        "file": "style.css",
+        "specialist": "css",
+        "summary": "Change color.",
+        "match_count": 1,
+        "replacements": 1,
+        "bytes_before": 10,
+        "bytes_after": 12,
+        "before_sha256": "a" * 64,
+        "after_sha256": "b" * 64,
+        "rejection_reason": None,
+        "message": "Patch applied atomically.",
+    }
+    payload.update(overrides)
+
+    with pytest.raises(ValidationError):
+        PatchExecutionResult(**payload)
+
+
+def test_rejected_patch_result_cannot_claim_a_write():
+    result = PatchExecutionResult(
+        status=PatchStatus.REJECTED,
+        file="style.css",
+        specialist="css",
+        summary="Missing target.",
+        match_count=0,
+        replacements=0,
+        bytes_before=10,
+        bytes_after=10,
+        before_sha256="a" * 64,
+        after_sha256="a" * 64,
+        rejection_reason=PatchRejectionReason.TARGET_NOT_FOUND,
+        message="old_text was not found.",
+    )
+
+    assert PatchExecutionResult.model_validate_json(result.model_dump_json()) == result
+    with pytest.raises(ValidationError):
+        PatchExecutionResult(**{**result.model_dump(), "after_sha256": "b" * 64})
+
+
+def test_diff_report_validates_per_file_totals_and_json_round_trip():
+    file_diff = FileDiff(
+        file="style.css",
+        unified_diff="--- working/style.css\n+++ staging/style.css\n",
+        added_lines=1,
+        removed_lines=1,
+    )
+    report = DiffReport(
+        run_id="diff-run",
+        changed_files=["style.css"],
+        files=[file_diff],
+        combined_diff=file_diff.unified_diff,
+        is_empty=False,
+        total_added_lines=1,
+        total_removed_lines=1,
+    )
+
+    restored = DiffReport.model_validate_json(report.model_dump_json())
+
+    assert restored == report
+    assert restored.unified_diff == restored.combined_diff

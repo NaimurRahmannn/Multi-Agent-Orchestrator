@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
+from enum import StrEnum
 from pathlib import Path
+from typing import Literal
 
 from pydantic import (
     BaseModel,
@@ -18,6 +21,35 @@ class WorkspaceModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_default=True, frozen=True)
 
 
+class PatchStatus(StrEnum):
+    APPLIED = "applied"
+    REJECTED = "rejected"
+
+
+class PatchRejectionReason(StrEnum):
+    TARGET_NOT_FOUND = "target_not_found"
+    AMBIGUOUS_TARGET = "ambiguous_target"
+    UNAUTHORIZED_FILE = "unauthorized_file"
+    UNSUPPORTED_EXTENSION = "unsupported_extension"
+    UNSAFE_PATH = "unsafe_path"
+    FILE_NOT_FOUND = "file_not_found"
+    INVALID_ENCODING = "invalid_encoding"
+    FILE_TOO_LARGE = "file_too_large"
+    PATCH_TOO_LARGE = "patch_too_large"
+    NO_OP = "no_op"
+    INVALID_PATCH = "invalid_patch"
+
+
+class WorkspaceLimits(WorkspaceModel):
+    """Immutable, server-controlled limits for staged text operations."""
+
+    max_file_bytes: StrictInt = Field(default=256 * 1024, ge=1)
+    max_read_lines: StrictInt = Field(default=120, ge=1)
+    max_old_text_bytes: StrictInt = Field(default=5_000, ge=1)
+    max_new_text_bytes: StrictInt = Field(default=5_000, ge=1)
+    max_combined_diff_bytes: StrictInt = Field(default=512 * 1024, ge=1)
+
+
 class WorkspaceHandle(WorkspaceModel):
     """Server-created handle for one staged editing run."""
 
@@ -31,7 +63,9 @@ class WorkspaceHandle(WorkspaceModel):
     def resolve_paths(cls, value: object) -> object:
         if value is None:
             return None
-        return Path(value).expanduser().resolve()
+        # Keep symlink identity intact. Filesystem boundaries resolve only after
+        # checking each candidate path for symlinks.
+        return Path(os.path.abspath(Path(value).expanduser()))
 
     @field_validator("run_id")
     @classmethod
@@ -83,13 +117,81 @@ class FileReadResult(WorkspaceModel):
 
 
 class PatchExecutionResult(WorkspaceModel):
+    status: PatchStatus
     file: StrictStr = Field(min_length=1, max_length=120)
     specialist: StrictStr = Field(min_length=1, max_length=20)
     summary: StrictStr = Field(min_length=1, max_length=300)
-    replacements: StrictInt = Field(ge=1)
+    match_count: StrictInt | None = Field(default=None, ge=0)
+    replacements: StrictInt = Field(default=0, ge=0, le=1)
+    bytes_before: StrictInt | None = Field(default=None, ge=0)
+    bytes_after: StrictInt | None = Field(default=None, ge=0)
+    before_sha256: StrictStr | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    after_sha256: StrictStr | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    rejection_reason: PatchRejectionReason | None = None
+    message: StrictStr = Field(min_length=1, max_length=500)
+
+    @model_validator(mode="after")
+    def validate_result_contract(self) -> PatchExecutionResult:
+        if self.status is PatchStatus.APPLIED:
+            if self.match_count != 1 or self.replacements != 1:
+                raise ValueError("applied patches must report exactly one match and replacement.")
+            if None in {
+                self.bytes_before,
+                self.bytes_after,
+                self.before_sha256,
+                self.after_sha256,
+            }:
+                raise ValueError("applied patches must include byte counts and SHA-256 hashes.")
+            if self.before_sha256 == self.after_sha256:
+                raise ValueError("applied patch hashes must differ.")
+            if self.rejection_reason is not None:
+                raise ValueError("applied patches must not include a rejection reason.")
+            return self
+
+        if self.replacements != 0:
+            raise ValueError("rejected patches must not report replacements.")
+        if self.rejection_reason is None:
+            raise ValueError("rejected patches must include a rejection reason.")
+        if self.after_sha256 is not None and self.after_sha256 != self.before_sha256:
+            raise ValueError("rejected patches must not report changed content hashes.")
+        if self.bytes_after is not None and self.bytes_after != self.bytes_before:
+            raise ValueError("rejected patches must not report changed byte counts.")
+        return self
+
+
+class FileDiff(WorkspaceModel):
+    file: StrictStr = Field(min_length=1, max_length=120)
+    change_type: Literal["modified"] = "modified"
+    unified_diff: StrictStr
+    added_lines: StrictInt = Field(ge=0)
+    removed_lines: StrictInt = Field(ge=0)
 
 
 class DiffReport(WorkspaceModel):
     run_id: StrictStr = Field(min_length=1, max_length=80)
     changed_files: list[StrictStr] = Field(default_factory=list)
-    unified_diff: StrictStr
+    files: list[FileDiff] = Field(default_factory=list)
+    combined_diff: StrictStr = ""
+    is_empty: StrictBool = True
+    total_added_lines: StrictInt = Field(default=0, ge=0)
+    total_removed_lines: StrictInt = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def validate_diff_contract(self) -> DiffReport:
+        file_names = [file.file for file in self.files]
+        if self.changed_files != file_names or self.changed_files != sorted(self.changed_files):
+            raise ValueError("changed_files must match files in deterministic path order.")
+        if self.is_empty != (not self.changed_files):
+            raise ValueError("is_empty must reflect whether changed files are present.")
+        if self.combined_diff != "".join(file.unified_diff for file in self.files):
+            raise ValueError("combined_diff must equal the ordered per-file diffs.")
+        if self.total_added_lines != sum(file.added_lines for file in self.files):
+            raise ValueError("total_added_lines must equal the per-file total.")
+        if self.total_removed_lines != sum(file.removed_lines for file in self.files):
+            raise ValueError("total_removed_lines must equal the per-file total.")
+        return self
+
+    @property
+    def unified_diff(self) -> str:
+        """Backward-compatible alias for the combined deterministic diff."""
+        return self.combined_diff

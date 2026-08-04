@@ -118,11 +118,13 @@ The workspace tooling work adds the deterministic staged-workspace and patch too
 
 - `create_staged_copy()` creates one safe server-controlled copy from `sites/working`.
 - `WorkspaceHandle` validates one staged run path under `sites/staging`.
-- `read_file()` reads bounded line ranges from approved staged `.html` and `.css` files.
-- `propose_patch()` applies exact unique-match text replacements and enforces specialist file ownership at runtime.
+- `read_file()` reads bounded line ranges from approved staged `.html` and `.css` files, with strict UTF-8 decoding and a 256 KiB file limit.
+- `propose_patch()` detects overlapping exact matches, returns structured applied or rejected results, and enforces specialist file ownership at runtime.
 - `ReadFileTool` and `ProposePatchTool` are CrewAI-compatible wrappers bound to one workspace, with the handle and specialist identity hidden from tool arguments.
-- `validate_staged_site()` rejects unapproved files, directories, symlinks, and structure drift.
-- `generate_diff()` produces deterministic unified diffs from `sites/working` to the staged run.
+- Patch writes use same-directory temporary files, flush and sync content, atomically replace the staged target, and restore the original bytes if post-write validation fails.
+- `validate_staged_site()` rejects unapproved files, directories, symlinks, structure drift, and any added, removed, renamed, or modified asset.
+- Invalid or partially corrupted staged runs can still be safely cleaned without touching `sites/working`, `sites/fixture`, the staging root, or another run.
+- `generate_diff()` produces deterministic per-file and combined unified diffs with added/removed line totals and a bounded output size.
 - `scripts/demo_workspace.py` demonstrates staging, reading, patching, diff generation, and cleanup without any Groq call.
 
 Workspace tooling does not add HTML, CSS, SEO, or QA agents. No specialist LLM execution, Manager-to-specialist orchestration, QA acceptance, promotion, browser automation, Lighthouse execution, or UI work is implemented here.
@@ -194,7 +196,7 @@ Run the deterministic no-LLM staged-workspace demo:
 python scripts/demo_workspace.py
 ```
 
-The demo creates a fixed staged run, reads a bounded CSS slice, applies one CSS patch in staging, prints the unified diff, and cleans up the staged run. It does not modify `sites/working` or `sites/fixture`.
+The demo creates a fixed staged run, reads a bounded CSS slice, applies one atomic CSS patch in staging, prints patch and diff evidence, verifies `sites/working` and `sites/fixture` are unchanged, and cleans up the staged run.
 
 Expected generated outputs:
 

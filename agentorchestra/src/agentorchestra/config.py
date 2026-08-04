@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -81,7 +82,8 @@ class Settings(BaseSettings):
         return self._derive_path("reports", "routing")
 
     def _derive_path(self, *parts: str) -> Path:
-        path = (self.project_root / Path(*parts)).resolve()
+        # Preserve the final path's symlink identity for filesystem safety checks.
+        path = Path(os.path.abspath(self.project_root / Path(*parts)))
         _ensure_inside_root(self.project_root, path)
         return path
 
