@@ -1,5 +1,7 @@
+import json
+
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from agentorchestra.agents.manager import ManagerRouter
 from agentorchestra.config import GroqConfiguration
@@ -105,6 +107,24 @@ def test_object_pydantic_output_is_accepted():
         pydantic = ManagerRoutingPlan.model_validate(execute_payload())
 
     assert router_for(Output()).route({"target_page": "index.html", "instruction": "Change button color."}).plan.status == "execute"
+
+
+def test_crewai_pydantic_wrapper_with_raw_json_is_accepted():
+    class CrewOutput(BaseModel):
+        raw: str
+        token_usage: dict[str, int]
+
+    output = CrewOutput(
+        raw=json.dumps(execute_payload()),
+        token_usage={"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 5},
+    )
+
+    result = router_for(output).route(
+        {"target_page": "index.html", "instruction": "Change button color."}
+    )
+
+    assert result.plan.status == "execute"
+    assert result.token_usage.total_tokens == 5
 
 
 def test_invalid_structured_output_is_rejected():

@@ -61,13 +61,24 @@ Use the Manager responsibilities and ownership rules. The Manager receives no fi
 """.strip()
 
 MANAGER_ROUTING_TASK_EXPECTED_OUTPUT = """
-A valid ManagerRoutingPlan with:
-- status
-- request_type
-- selected_specialists
-- routing_rationale
-- assignments
-- acceptance_criteria
-- clarification_question
-- rejection_reason
+Return only one JSON object. Do not use markdown, prose outside the object, or a
+"Final Answer" label. Use exactly this shape:
+
+{
+  "status": "execute | clarification_required | out_of_scope",
+  "request_type": "short classification",
+  "selected_specialists": ["html | css | seo"],
+  "routing_rationale": "short ownership-based explanation",
+  "assignments": [{"agent": "html | css | seo", "task": "focused task"}],
+  "acceptance_criteria": ["measurable criterion"],
+  "clarification_question": null,
+  "rejection_reason": null
+}
+
+For execute, include exactly one assignment per selected specialist and at least
+one acceptance criterion; both nullable fields must be null. For
+clarification_required, use empty specialists, assignments, and criteria, include
+one clarification question, and set rejection_reason to null. For out_of_scope,
+use empty specialists, assignments, and criteria, include one rejection reason,
+and set clarification_question to null.
 """.strip()

@@ -134,6 +134,20 @@ def test_structural_validation_failure_and_execution_exception_continue():
     assert report.results[2].structurally_valid
 
 
+def test_benchmark_paces_calls_after_the_first_case():
+    delays = []
+    runner = RoutingBenchmarkRunner(
+        FakeRouter([plan_payload(), plan_payload(), plan_payload()]),
+        now_provider=fixed_now,
+        delay_seconds=1.25,
+        sleeper=delays.append,
+    )
+
+    runner.run([case("one"), case("two"), case("three")])
+
+    assert delays == [1.25, 1.25]
+
+
 def test_report_json_serialization_is_deterministic_and_safe(tmp_path):
     report = RoutingBenchmarkRunner(
         FakeRouter([plan_payload()]),

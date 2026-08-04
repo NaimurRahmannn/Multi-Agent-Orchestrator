@@ -21,6 +21,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the AgentOrchestra Manager routing benchmark.")
     parser.add_argument("--include-diagnostics", action="store_true")
     parser.add_argument("--report-path")
+    parser.add_argument(
+        "--delay-seconds",
+        type=float,
+        default=None,
+        help="Delay between live cases (default: 1.0; injected test routers: 0).",
+    )
     return parser
 
 
@@ -31,7 +37,14 @@ def main(argv: Sequence[str] | None = None, router: ManagerRoutingInterface | No
         selected_cases.extend(DIAGNOSTIC_ROUTING_CASES)
 
     manager_router = router or ManagerRouter()
-    runner = RoutingBenchmarkRunner(manager_router, target_page_resolver=target_page_for_case)
+    delay_seconds = args.delay_seconds
+    if delay_seconds is None:
+        delay_seconds = 1.0 if router is None else 0.0
+    runner = RoutingBenchmarkRunner(
+        manager_router,
+        target_page_resolver=target_page_for_case,
+        delay_seconds=delay_seconds,
+    )
     report = runner.run(selected_cases)
     path = Path(args.report_path) if args.report_path else default_report_path()
     written_path = write_routing_benchmark_report(report, path)

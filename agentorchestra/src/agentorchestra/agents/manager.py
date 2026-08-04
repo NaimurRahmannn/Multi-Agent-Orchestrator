@@ -19,6 +19,7 @@ from agentorchestra.prompts.manager import (
     MANAGER_AGENT_ROLE,
     MANAGER_ROUTING_TASK_DESCRIPTION,
     MANAGER_ROUTING_TASK_EXPECTED_OUTPUT,
+    MANAGER_SYSTEM_PROMPT,
 )
 
 CrewExecutor = Callable[[Any, dict[str, Any]], Any]
@@ -82,7 +83,7 @@ def build_manager_agent(groq: GroqConfiguration) -> Any:
     return Agent(
         role=MANAGER_AGENT_ROLE,
         goal=MANAGER_AGENT_GOAL,
-        backstory=MANAGER_AGENT_BACKSTORY,
+        backstory=f"{MANAGER_AGENT_BACKSTORY}\n\n{MANAGER_SYSTEM_PROMPT}",
         allow_delegation=False,
         tools=[],
         llm=llm,
@@ -105,7 +106,6 @@ def build_manager_task(agent: Any) -> Any:
         description=MANAGER_ROUTING_TASK_DESCRIPTION,
         expected_output=MANAGER_ROUTING_TASK_EXPECTED_OUTPUT,
         agent=agent,
-        output_pydantic=ManagerRoutingPlan,
         tools=[],
         async_execution=False,
         human_input=False,
@@ -163,8 +163,6 @@ def extract_manager_plan(output: Any) -> ManagerRoutingPlan:
         return output
     if isinstance(output, Mapping):
         return ManagerRoutingPlan.model_validate(output)
-    if isinstance(output, BaseModel):
-        return ManagerRoutingPlan.model_validate(output.model_dump(mode="json"))
 
     pydantic_output = getattr(output, "pydantic", None)
     if pydantic_output is not None:
@@ -185,6 +183,9 @@ def extract_manager_plan(output: Any) -> ManagerRoutingPlan:
     raw = getattr(output, "raw", None)
     if isinstance(raw, str) and raw.strip():
         return ManagerRoutingPlan.model_validate_json(_extract_json_object(raw))
+
+    if isinstance(output, BaseModel):
+        return ManagerRoutingPlan.model_validate(output.model_dump(mode="json"))
 
     raise ManagerOutputError("Manager response did not contain structured routing output.")
 

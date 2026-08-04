@@ -27,14 +27,16 @@ def test_build_manager_agent_uses_configured_model_and_no_tools():
     assert agent.tools == []
     assert agent.llm.model == "groq/llama-test"
     assert agent.max_iter == 1
+    assert manager.MANAGER_SYSTEM_PROMPT in agent.backstory
 
 
-def test_build_manager_task_requests_pydantic_output():
+def test_build_manager_task_requests_json_for_local_validation():
     agent = manager.build_manager_agent(groq_config())
     task = manager.build_manager_task(agent)
 
     assert task.agent is agent
-    assert task.output_pydantic.__name__ == "ManagerRoutingPlan"
+    assert task.output_pydantic is None
+    assert "Return only one JSON object" in task.expected_output
     assert task.tools == []
     assert task.async_execution is False
 

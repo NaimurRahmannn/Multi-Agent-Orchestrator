@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ from agentorchestra.models import (
 
 DEFAULT_ROUTING_BENCHMARK_REPORT = Path("reports/routing/manager_routing_benchmark.json")
 NowProvider = Callable[[], datetime]
+Sleeper = Callable[[float], None]
 
 
 class RoutingBenchmarkRunner:
@@ -30,16 +32,22 @@ class RoutingBenchmarkRunner:
         model: str = "unknown",
         target_page_resolver: Callable[[RoutingEvidenceCase], str] | None = None,
         now_provider: NowProvider | None = None,
+        delay_seconds: float = 0.0,
+        sleeper: Sleeper = time.sleep,
     ) -> None:
         self._router = router
         self._model = model
         self._target_page_resolver = target_page_resolver or (lambda case: "index.html")
         self._now_provider = now_provider or (lambda: datetime.now(UTC))
+        self._delay_seconds = max(0.0, delay_seconds)
+        self._sleeper = sleeper
 
     def run(self, cases: Sequence[RoutingEvidenceCase]) -> RoutingBenchmarkReport:
         results: list[RoutingEvidenceResult] = []
         model = self._model
-        for case in cases:
+        for index, case in enumerate(cases):
+            if index and self._delay_seconds:
+                self._sleeper(self._delay_seconds)
             try:
                 request = EditRequest(
                     target_page=self._target_page_resolver(case),
