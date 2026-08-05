@@ -15,7 +15,9 @@ def live_settings(tmp_path):
         groq_manager_api_key="manager-unit-test-secret",
         groq_html_api_key="html-unit-test-secret",
         groq_css_api_key="css-unit-test-secret",
-        groq_model="test-model",
+        groq_manager_model="manager-test-model",
+        groq_html_model="html-test-model",
+        groq_css_model="css-test-model",
     )
 
 

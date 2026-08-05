@@ -21,9 +21,9 @@ def completion(status="completed"):
     )
 
 
-def fake_agent_factory(specialist, recorder_ids=None):
+def fake_agent_factory(specialist, recorder_ids=None, expected_model="test-model"):
     def factory(*, workspace, target_page, recorder, groq, verbose):
-        assert groq.model == "test-model"
+        assert groq.model == expected_model
         assert verbose is False
         if recorder_ids is not None:
             recorder_ids.append(id(recorder))
@@ -255,14 +255,14 @@ def test_one_recorder_is_created_per_run(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("specialist", "expected_key", "executor"),
+    ("specialist", "expected_key", "expected_model", "executor"),
     [
-        (SpecialistName.HTML, "html-secret", apply_html),
-        (SpecialistName.CSS, "css-secret", apply_css),
+        (SpecialistName.HTML, "html-secret", "html-model", apply_html),
+        (SpecialistName.CSS, "css-secret", "css-model", apply_css),
     ],
 )
 def test_specialist_runner_selects_matching_role_credentials(
-    tmp_path, specialist, expected_key, executor
+    tmp_path, specialist, expected_key, expected_model, executor
 ):
     base = make_settings(tmp_path)
     settings = Settings(
@@ -270,16 +270,18 @@ def test_specialist_runner_selects_matching_role_credentials(
         groq_manager_api_key="manager-secret",
         groq_html_api_key="html-secret",
         groq_css_api_key="css-secret",
-        groq_model="test-model",
+        groq_manager_model="manager-model",
+        groq_html_model="html-model",
+        groq_css_model="css-model",
     )
     handle = create_staged_copy(
         settings=settings, run_id_factory=lambda: f"runner-key-{specialist.value}"
     )
-    base_factory = fake_agent_factory(specialist)
+    base_factory = fake_agent_factory(specialist, expected_model=expected_model)
     captured = []
 
     def recording_factory(**kwargs):
-        captured.append(kwargs["groq"].api_key)
+        captured.append((kwargs["groq"].api_key, kwargs["groq"].model))
         return base_factory(**kwargs)
 
     runner = SpecialistRunner(
@@ -294,7 +296,7 @@ def test_specialist_runner_selects_matching_role_credentials(
     result = run(runner, handle, specialist)
 
     assert result.status == "succeeded"
-    assert captured == [expected_key]
+    assert captured == [(expected_key, expected_model)]
 
 
 def test_seo_specialist_is_rejected_before_execution(tmp_path):

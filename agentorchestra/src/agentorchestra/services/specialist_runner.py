@@ -154,7 +154,7 @@ class SpecialistRunner:
 
         status, status_error = _derive_run_status(completion, patch_results, error)
         error = status_error
-        model = _result_model(groq, self._groq, self._settings)
+        model = _result_model(groq, self._groq, self._settings, specialist)
         return SpecialistRunResult(
             specialist=specialist,
             assignment=validated_assignment.task,
@@ -211,13 +211,19 @@ def _result_model(
     resolved: GroqConfiguration | None,
     explicit: GroqConfiguration | None,
     settings: Settings | None,
+    specialist: SpecialistName,
 ) -> str:
     if resolved is not None:
         return crewai_model_name(resolved.model)
     if explicit is not None:
         return crewai_model_name(explicit.model)
-    if settings is not None and settings.groq_model:
-        return crewai_model_name(settings.groq_model)
+    configured_model = (
+        settings.groq_model_for(GroqAgentName(specialist.value))
+        if settings is not None
+        else None
+    )
+    if configured_model:
+        return crewai_model_name(configured_model)
     return "groq/unavailable"
 
 

@@ -74,7 +74,9 @@ def test_manager_router_selects_only_manager_credentials_from_settings():
         groq_manager_api_key="manager-secret",
         groq_html_api_key="html-secret",
         groq_css_api_key="css-secret",
-        groq_model="llama-test",
+        groq_manager_model="manager-model",
+        groq_html_model="html-model",
+        groq_css_model="css-model",
     )
     router = manager.ManagerRouter(
         settings=settings,
@@ -94,17 +96,18 @@ def test_manager_router_selects_only_manager_credentials_from_settings():
     router.route({"target_page": "index.html", "instruction": "Change button color."})
 
     assert [configuration.api_key for configuration in captured] == ["manager-secret"]
+    assert [configuration.model for configuration in captured] == ["manager-model"]
 
 
 def test_missing_groq_configuration_raises_focused_error(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GROQ_MANAGER_API_KEY", raising=False)
-    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_MANAGER_MODEL", raising=False)
     router = manager.ManagerRouter(settings=Settings())
 
     with pytest.raises(ConfigurationError) as error:
         router.route({"target_page": "index.html", "instruction": "Change button color."})
 
     assert "GROQ_MANAGER_API_KEY" in str(error.value)
-    assert "GROQ_MODEL" in str(error.value)
+    assert "GROQ_MANAGER_MODEL" in str(error.value)
     assert "unit-test-secret" not in str(error.value)

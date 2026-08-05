@@ -19,7 +19,9 @@ def live_settings(tmp_path):
         groq_manager_api_key="manager-unit-test-secret",
         groq_html_api_key="html-unit-test-secret",
         groq_css_api_key="css-unit-test-secret",
-        groq_model="test-model",
+        groq_manager_model="manager-test-model",
+        groq_html_model="html-test-model",
+        groq_css_model="css-test-model",
     )
 
 
@@ -66,7 +68,7 @@ def test_single_specialist_cli_requires_only_selected_agent_key(tmp_path, capsys
     settings = Settings(
         project_root=base.project_root,
         groq_css_api_key="css-only-secret",
-        groq_model="test-model",
+        groq_css_model="css-only-model",
     )
 
     code = run_specialist.main(

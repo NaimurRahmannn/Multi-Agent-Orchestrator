@@ -17,7 +17,9 @@ def test_settings_load_without_groq_key(monkeypatch, tmp_path):
     monkeypatch.delenv("GROQ_MANAGER_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_HTML_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_CSS_API_KEY", raising=False)
-    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_MANAGER_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_HTML_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_CSS_MODEL", raising=False)
     get_settings.cache_clear()
 
     settings = get_settings()
@@ -25,13 +27,16 @@ def test_settings_load_without_groq_key(monkeypatch, tmp_path):
     assert settings.groq_manager_api_key is None
     assert settings.groq_html_api_key is None
     assert settings.groq_css_api_key is None
+    assert settings.groq_manager_model is None
+    assert settings.groq_html_model is None
+    assert settings.groq_css_model is None
     assert settings.app_env == "development"
 
 
 def test_groq_validation_fails_clearly_without_key(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GROQ_MANAGER_API_KEY", raising=False)
-    monkeypatch.setenv("GROQ_MODEL", "llama-test")
+    monkeypatch.setenv("GROQ_MANAGER_MODEL", "manager-model")
 
     settings = Settings()
 
@@ -39,20 +44,20 @@ def test_groq_validation_fails_clearly_without_key(monkeypatch, tmp_path):
         settings.require_groq_configuration(GroqAgentName.MANAGER)
 
     assert "GROQ_MANAGER_API_KEY" in str(error.value)
-    assert "GROQ_MODEL" not in str(error.value)
+    assert "GROQ_MANAGER_MODEL" not in str(error.value)
 
 
 def test_groq_validation_fails_clearly_without_model(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GROQ_MANAGER_API_KEY", "manager-secret")
-    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_MANAGER_MODEL", raising=False)
 
     settings = Settings()
 
     with pytest.raises(ConfigurationError) as error:
         settings.require_groq_configuration(GroqAgentName.MANAGER)
 
-    assert "GROQ_MODEL" in str(error.value)
+    assert "GROQ_MANAGER_MODEL" in str(error.value)
     assert "manager-secret" not in str(error.value)
 
 
@@ -61,7 +66,9 @@ def test_environment_overrides_work(monkeypatch, tmp_path):
     monkeypatch.setenv("GROQ_MANAGER_API_KEY", "manager-secret")
     monkeypatch.setenv("GROQ_HTML_API_KEY", "html-secret")
     monkeypatch.setenv("GROQ_CSS_API_KEY", "css-secret")
-    monkeypatch.setenv("GROQ_MODEL", "test-model")
+    monkeypatch.setenv("GROQ_MANAGER_MODEL", "manager-model")
+    monkeypatch.setenv("GROQ_HTML_MODEL", "html-model")
+    monkeypatch.setenv("GROQ_CSS_MODEL", "css-model")
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
     monkeypatch.setenv("UNKNOWN_SETTING", "ignored")
@@ -77,7 +84,12 @@ def test_environment_overrides_work(monkeypatch, tmp_path):
     assert manager_groq.api_key == "manager-secret"
     assert html_groq.api_key == "html-secret"
     assert css_groq.api_key == "css-secret"
-    assert manager_groq.model == html_groq.model == css_groq.model == "test-model"
+    assert manager_groq.model == "manager-model"
+    assert html_groq.model == "html-model"
+    assert css_groq.model == "css-model"
+    assert settings.groq_model_for(GroqAgentName.MANAGER) == "manager-model"
+    assert settings.groq_model_for(GroqAgentName.HTML) == "html-model"
+    assert settings.groq_model_for(GroqAgentName.CSS) == "css-model"
     assert settings.app_env == "test"
     assert settings.log_level == "DEBUG"
 
@@ -150,7 +162,7 @@ def test_secret_values_are_not_leaked(monkeypatch, tmp_path):
     monkeypatch.setenv("GROQ_MANAGER_API_KEY", "manager-super-secret-key")
     monkeypatch.setenv("GROQ_HTML_API_KEY", "html-super-secret-key")
     monkeypatch.setenv("GROQ_CSS_API_KEY", "css-super-secret-key")
-    monkeypatch.delenv("GROQ_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_CSS_MODEL", raising=False)
 
     settings = Settings()
 
@@ -166,11 +178,13 @@ def test_secret_values_are_not_leaked(monkeypatch, tmp_path):
 def test_legacy_shared_key_does_not_replace_role_specific_key(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GROQ_API_KEY", "legacy-shared-secret")
+    monkeypatch.setenv("GROQ_MODEL", "legacy-shared-model")
     monkeypatch.delenv("GROQ_CSS_API_KEY", raising=False)
-    monkeypatch.setenv("GROQ_MODEL", "test-model")
+    monkeypatch.delenv("GROQ_CSS_MODEL", raising=False)
 
     with pytest.raises(ConfigurationError) as error:
         Settings().require_groq_configuration(GroqAgentName.CSS)
 
     assert "GROQ_CSS_API_KEY" in str(error.value)
+    assert "GROQ_CSS_MODEL" in str(error.value)
     assert "legacy-shared-secret" not in str(error.value)

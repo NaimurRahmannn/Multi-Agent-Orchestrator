@@ -28,7 +28,7 @@ def test_crewai_model_name_rejects_blank_model():
     try:
         MODULE._crewai_model_name("  ")
     except ValueError as exc:
-        assert "GROQ_MODEL" in str(exc)
+        assert "Groq model" in str(exc)
     else:
         raise AssertionError("blank model should fail")
 

@@ -108,7 +108,7 @@ This report path is ignored by Git.
 | This page will not rank; what is missing? | `execute`: `seo` |
 | Add a meta description and make the main heading bigger | `execute`: `seo`, `css` |
 
-Automated tests use fakes and make no live LLM calls. Live Manager and benchmark commands require `.env` values for `GROQ_MANAGER_API_KEY` and `GROQ_MODEL`, require network access, and consume Groq tokens.
+Automated tests use fakes and make no live LLM calls. Live Manager and benchmark commands require `.env` values for `GROQ_MANAGER_API_KEY` and `GROQ_MANAGER_MODEL`, require network access, and consume Groq tokens.
 
 HTML/CSS specialist execution is documented below. SEO execution, QA execution, staged-site promotion, Lighthouse production integration, Playwright production integration, Streamlit UI, and full production Flow orchestration remain unimplemented.
 
@@ -158,7 +158,7 @@ python scripts/run_edit_preview.py \
   --instruction "Make the heading bigger and improve the hero image alt text"
 ```
 
-The routed command uses `GROQ_MANAGER_API_KEY` for routing and the selected specialist's `GROQ_HTML_API_KEY` or `GROQ_CSS_API_KEY` for editing. The single-specialist command requires only its matching specialist key. Both commands also require `GROQ_MODEL`, network access, and consume Groq tokens. They create a copy under `sites/staging/<run_id>`, never edit `sites/working` or `sites/fixture`, and clean staging in a `finally` block by default. Use `--keep-staging` only when manual inspection is needed.
+The routed command uses the Manager's key/model pair for routing and each selected specialist's matching key/model pair for editing. The single-specialist command requires only its matching specialist pair. Both commands require network access and consume Groq tokens. They create a copy under `sites/staging/<run_id>`, never edit `sites/working` or `sites/fixture`, and clean staging in a `finally` block by default. Use `--keep-staging` only when manual inspection is needed.
 
 These commands do not run QA, promote staging, or modify working. SEO execution is rejected before staging. The routed preview is not the final CrewAI Flow. Lighthouse production execution, screenshots, Streamlit, and the final promotion workflow remain later work.
 
@@ -183,7 +183,9 @@ Fill in `.env` only when running live Groq checks:
 GROQ_MANAGER_API_KEY=
 GROQ_HTML_API_KEY=
 GROQ_CSS_API_KEY=
-GROQ_MODEL=openai/gpt-oss-20b
+GROQ_MANAGER_MODEL=llama-3.3-70b-versatile
+GROQ_HTML_MODEL=llama-3.3-70b-versatile
+GROQ_CSS_MODEL=openai/gpt-oss-20b
 APP_ENV=development
 LOG_LEVEL=INFO
 AGENTORCHESTRA_ROOT=
@@ -191,7 +193,7 @@ AGENTORCHESTRA_ROOT=
 
 Configuration is loaded with `pydantic-settings`. `AGENTORCHESTRA_ROOT` is optional and is mainly useful for tests or unusual local layouts; derived site and report paths remain under that root. Runtime-directory creation is explicit and limited to staging and report directories.
 
-Each Groq key is bound to only its named agent. To distribute provider quotas, use keys from the separate Groq organizations authorized for those agents; keys from one organization still share that organization's limits. Never commit the populated `.env` file.
+Each Groq key/model pair is bound to only its named agent. To distribute provider quotas, use keys from the separate Groq organizations authorized for those agents; keys from one organization still share that organization's limits. Model IDs may differ by agent, but each must be available to its corresponding organization. Never commit the populated `.env` file.
 
 Install Python dependencies with the project toolchain:
 

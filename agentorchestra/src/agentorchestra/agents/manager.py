@@ -33,7 +33,7 @@ class ManagerRoutingInterface(Protocol):
 def crewai_model_name(model: str) -> str:
     normalized = model.strip()
     if not normalized:
-        raise ValueError("GROQ_MODEL must not be empty.")
+        raise ValueError("Groq model must not be empty.")
     if normalized.startswith("groq/"):
         return normalized
     return f"groq/{normalized}"

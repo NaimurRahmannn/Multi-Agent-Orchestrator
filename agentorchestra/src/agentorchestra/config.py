@@ -33,7 +33,9 @@ class Settings(BaseSettings):
     groq_manager_api_key: SecretStr | None = Field(default=None, alias="GROQ_MANAGER_API_KEY")
     groq_html_api_key: SecretStr | None = Field(default=None, alias="GROQ_HTML_API_KEY")
     groq_css_api_key: SecretStr | None = Field(default=None, alias="GROQ_CSS_API_KEY")
-    groq_model: str | None = Field(default=None, alias="GROQ_MODEL")
+    groq_manager_model: str | None = Field(default=None, alias="GROQ_MANAGER_MODEL")
+    groq_html_model: str | None = Field(default=None, alias="GROQ_HTML_MODEL")
+    groq_css_model: str | None = Field(default=None, alias="GROQ_CSS_MODEL")
     app_env: str = Field(default="development", alias="APP_ENV")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO",
@@ -55,7 +57,13 @@ class Settings(BaseSettings):
             return DEFAULT_PROJECT_ROOT.resolve()
         return Path(value).expanduser().resolve()
 
-    @field_validator("groq_model", "app_env", mode="before")
+    @field_validator(
+        "groq_manager_model",
+        "groq_html_model",
+        "groq_css_model",
+        "app_env",
+        mode="before",
+    )
     @classmethod
     def strip_optional_text(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
@@ -99,18 +107,33 @@ class Settings(BaseSettings):
         return path
 
     def require_groq_configuration(self, agent: GroqAgentName) -> GroqConfiguration:
-        """Return the selected agent's Groq key and the shared model."""
-        key_fields = {
-            GroqAgentName.MANAGER: (self.groq_manager_api_key, "GROQ_MANAGER_API_KEY"),
-            GroqAgentName.HTML: (self.groq_html_api_key, "GROQ_HTML_API_KEY"),
-            GroqAgentName.CSS: (self.groq_css_api_key, "GROQ_CSS_API_KEY"),
+        """Return the selected agent's strictly bound Groq key and model."""
+        agent_fields = {
+            GroqAgentName.MANAGER: (
+                self.groq_manager_api_key,
+                "GROQ_MANAGER_API_KEY",
+                self.groq_manager_model,
+                "GROQ_MANAGER_MODEL",
+            ),
+            GroqAgentName.HTML: (
+                self.groq_html_api_key,
+                "GROQ_HTML_API_KEY",
+                self.groq_html_model,
+                "GROQ_HTML_MODEL",
+            ),
+            GroqAgentName.CSS: (
+                self.groq_css_api_key,
+                "GROQ_CSS_API_KEY",
+                self.groq_css_model,
+                "GROQ_CSS_MODEL",
+            ),
         }
-        api_key, api_key_name = key_fields[agent]
+        api_key, api_key_name, model, model_name = agent_fields[agent]
         missing: list[str] = []
         if not api_key or not api_key.get_secret_value().strip():
             missing.append(api_key_name)
-        if not self.groq_model or not self.groq_model.strip():
-            missing.append("GROQ_MODEL")
+        if not model or not model.strip():
+            missing.append(model_name)
         if missing:
             names = ", ".join(missing)
             raise ConfigurationError(
@@ -119,8 +142,17 @@ class Settings(BaseSettings):
             )
         return GroqConfiguration(
             api_key=api_key.get_secret_value(),
-            model=self.groq_model.strip(),
+            model=model.strip(),
         )
+
+    def groq_model_for(self, agent: GroqAgentName) -> str | None:
+        """Return one configured agent model without requiring its API key."""
+        models = {
+            GroqAgentName.MANAGER: self.groq_manager_model,
+            GroqAgentName.HTML: self.groq_html_model,
+            GroqAgentName.CSS: self.groq_css_model,
+        }
+        return models[agent]
 
     def require_groq(self) -> None:
         """Validate the Manager credentials used by the basic Groq feasibility check."""
@@ -147,6 +179,7 @@ class Settings(BaseSettings):
 
     @property
     def groq_model_value(self) -> str:
+        """Return the Manager model used by the basic Groq feasibility check."""
         return self.require_groq_configuration(GroqAgentName.MANAGER).model
 
 
