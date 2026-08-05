@@ -166,23 +166,27 @@ These preview commands do not run QA, promote staging, or modify working. SEO ex
 
 ## QA-Controlled Edit Flow Status
 
-The production edit Flow now controls the HTML/CSS lifecycle:
+The production edit lifecycle is an explicit CrewAI Flow transition graph. `kickoff()` is the
+authoritative entry point; `run()` remains only as a compatibility wrapper that delegates to it:
 
 ```text
 EditRequest
-  -> ManagerRouter
-  -> validated ManagerRoutingPlan
-  -> fresh staging copy
+  -> @start Manager routing
+  -> Manager router: clarify / out of scope / unsupported / executable
+  -> fresh staging transition
   -> selected HTML/CSS specialists in Manager order
-  -> deterministic evidence validation
+  -> specialist-result router
+  -> deterministic evidence and content-digest validation
   -> tool-free QA Agent
-  -> QA accept promotes staging to working
-  -> QA reject, blocked work, or failure discards staging
+  -> QA verdict router
+  -> QA accept promotes; every other staged outcome discards
 ```
 
 QA receives a deterministic evidence bundle containing the original request, Manager-selected specialists and assignments, exact acceptance criteria, actual applied/rejected patch metadata, changed files, and the final staged diff. QA has no tools and cannot edit files, invoke agents, promote staging, or discard staging. Each Manager acceptance criterion must be returned exactly once; QA accepts only when every criterion passes and rejects insufficient evidence.
 
-Before QA runs, the Flow validates that the specialist report succeeded, selected specialists match execution order, at least one patch was applied, changed files exactly match applied patch files, ownership boundaries are respected, the diff is non-empty, and no asset or absolute path appears in user-facing evidence.
+Before QA runs, the Flow validates that the specialist report succeeded, selected specialists match execution order, at least one patch was applied, changed files exactly match applied patch files, ownership boundaries are respected, the diff is non-empty, and no asset or absolute path appears in structured user-facing evidence. Normal HTML closing tags, CSS URLs, and web URLs in unified diff content are not treated as filesystem paths.
+
+The Flow records a deterministic SHA-256 digest over every validated site-relative path and its exact bytes. On acceptance it revalidates both the reviewed diff and QA evidence digest, then requires the staged, promotion-candidate, and installed working trees to have the same content digest. Digest equality complements rather than replaces exact diff equality.
 
 Run the full Flow only when you intend to allow live Groq calls and working-site promotion:
 
@@ -213,8 +217,11 @@ Outcome exit codes:
 | out_of_scope | 6 |
 | unsupported_specialist | 7 |
 | blocked | 8 |
+| critical working-site recovery required | 9 |
 
-On QA accept, the Flow revalidates the reviewed staged diff immediately before promotion. Promotion copies staging to a candidate, renames working to a backup, installs the candidate as working, validates the result, and removes temporary candidate/backup directories. If promotion fails after backup creation, the backup is restored. No persistent rollback history is kept.
+On QA accept, promotion copies staging to a uniquely generated candidate, proves its digest matches staging, renames working to a backup, installs the candidate, and proves the final working digest matches the accepted content. A commit/validation failure restores and verifies the original working digest. If restoration cannot be completed, the core Flow propagates a critical recovery error and preserves recovery material; the CLI returns exit code 9.
+
+After a proven commit, failure to remove an obsolete backup, candidate, or staged run is reported as `committed_with_warning`. The edit remains accepted and `working updated` remains true, while each cleanup flag and warning stays honest. Clean commits remove all transaction paths. No persistent version history is kept.
 
 Reset the demo working site from the fixture with explicit confirmation:
 
@@ -222,7 +229,9 @@ Reset the demo working site from the fixture with explicit confirmation:
 python scripts/reset_demo_site.py --reset
 ```
 
-The reset command uses the same candidate/backup replacement pattern and does not remove unrelated staging runs.
+The reset command uses the same candidate, digest, commit, verified rollback, and post-commit warning semantics. It does not remove unrelated staging runs. Reset cleanup warnings remain successful resets; a rollback failure returns the same critical exit code 9.
+
+QA judges source evidence only. Browser screenshot evidence, Lighthouse evidence, SEO execution, and Streamlit are not implemented yet.
 
 ## Prerequisites
 
@@ -347,6 +356,7 @@ pytest tests/test_pipeline_models.py tests/test_qa_prompt.py tests/test_qa_agent
 pytest tests/test_qa_output.py tests/test_qa_runner.py tests/test_qa_evidence.py -q
 pytest tests/test_promotion_service.py tests/test_edit_flow.py -q
 pytest tests/test_edit_flow_cli.py tests/test_reset_demo_site.py -q
+pytest tests/test_flow_transitions.py tests/test_site_digest.py tests/test_path_safety.py -q
 ```
 
 ## Sample Site

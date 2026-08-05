@@ -1,5 +1,10 @@
+from agentorchestra.exceptions import PromotionRollbackError
 from agentorchestra.models import EditRequest
-from agentorchestra.pipeline_models import EditRunReport, QARunResult
+from agentorchestra.pipeline_models import (
+    EditRunReport,
+    PromotionResult,
+    QARunResult,
+)
 from agentorchestra.scripts import run_edit_flow
 from tests.test_pipeline_models import manager_result, qa_result
 from tests.test_qa_evidence import report as specialist_report
@@ -11,8 +16,8 @@ class FakeFlow:
         self.report = report
         self.calls = []
 
-    def run(self, request):
-        self.calls.append(request)
+    def kickoff(self, *, inputs):
+        self.calls.append(inputs)
         return self.report
 
 
@@ -25,10 +30,27 @@ def report(status="accepted"):
         model="groq/qa",
     )
     request = manager.request
-    if status == "accepted":
+    if status in {"accepted", "accepted_warning"}:
+        digest = "d" * 64
+        warning = status == "accepted_warning"
+        warnings = ["Could not remove staged run 'test-run'."] if warning else []
+        promotion = PromotionResult(
+            run_id=specialist.run_id,
+            status="committed_with_warning" if warning else "committed",
+            working_updated=True,
+            reviewed_diff=specialist.diff_report,
+            final_diff=specialist.diff_report,
+            staging_cleaned=not warning,
+            candidate_cleaned=True,
+            backup_cleaned=True,
+            accepted_content_digest=digest,
+            final_working_digest=digest,
+            warnings=warnings,
+            message="Committed.",
+        )
         return EditRunReport(
             request=request,
-            status=status,
+            status="accepted",
             manager_result=manager,
             plan=manager.plan,
             run_id=specialist.run_id,
@@ -36,10 +58,16 @@ def report(status="accepted"):
             qa_run=qa,
             reviewed_diff=specialist.diff_report,
             final_diff=specialist.diff_report,
+            promotion_result=promotion,
+            promotion_status=promotion.status,
+            accepted_content_digest=digest,
+            final_working_digest=digest,
             working_updated=True,
-            staging_cleaned=True,
+            staging_cleaned=not warning,
             message="Flow message.",
             total_latency_ms=1.0,
+            warnings=warnings,
+            cleanup_warnings=warnings,
         )
     if status == "rejected":
         return EditRunReport(
@@ -105,7 +133,9 @@ def test_edit_flow_cli_prints_accepted_report(tmp_path, capsys):
     output = capsys.readouterr().out
 
     assert code == 0
-    assert fake.calls == [EditRequest(target_page="index.html", instruction="Apply edit.")]
+    assert fake.calls == [
+        {"request": EditRequest(target_page="index.html", instruction="Apply edit.").model_dump(mode="json")}
+    ]
     assert "flow outcome: accepted" in output
     assert "working updated: yes" in output
 
@@ -130,3 +160,42 @@ def test_edit_flow_cli_uses_stable_nonzero_status_codes(tmp_path, capsys):
 
         assert code == expected
         assert "flow outcome:" in output
+
+
+def test_edit_flow_cli_reports_committed_cleanup_warning(tmp_path, capsys):
+    settings = make_settings(tmp_path)
+
+    code = run_edit_flow.main(
+        ["--target-page", "index.html", "--instruction", "Apply edit.", "--apply"],
+        settings=settings,
+        flow=FakeFlow(report("accepted_warning")),
+    )
+    output = capsys.readouterr().out
+
+    assert code == 0
+    assert "flow outcome: accepted" in output
+    assert "promotion status: committed_with_warning" in output
+    assert "cleanup warning:" in output
+
+
+def test_edit_flow_cli_uses_distinct_critical_recovery_exit_code(tmp_path, capsys):
+    settings = make_settings(tmp_path)
+
+    class CriticalFlow:
+        def kickoff(self, *, inputs):
+            del inputs
+            raise PromotionRollbackError(
+                "Recovery required.",
+                recovery_paths=("working", ".agentorchestra-backup-test"),
+            )
+
+    code = run_edit_flow.main(
+        ["--target-page", "index.html", "--instruction", "Apply edit.", "--apply"],
+        settings=settings,
+        flow=CriticalFlow(),
+    )
+    output = capsys.readouterr().out
+
+    assert code == run_edit_flow.CRITICAL_RECOVERY_EXIT_CODE == 9
+    assert "Critical: working-site recovery is required" in output
+    assert str(tmp_path) not in output

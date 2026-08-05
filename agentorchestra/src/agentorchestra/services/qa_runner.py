@@ -93,6 +93,7 @@ class QARunner:
             token_usage=usage,
             model=crewai_model_name(groq.model),
             evidence_digest=validated_evidence.evidence_digest,
+            site_content_digest=validated_evidence.site_content_digest,
         )
 
     def _resolve_groq(self) -> GroqConfiguration:

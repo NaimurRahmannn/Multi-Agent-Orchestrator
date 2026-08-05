@@ -4,9 +4,11 @@ import argparse
 from collections.abc import Sequence
 
 from agentorchestra.config import Settings, get_settings
-from agentorchestra.exceptions import AgentOrchestraError
+from agentorchestra.exceptions import AgentOrchestraError, PromotionError, PromotionRollbackError
 from agentorchestra.scripts.specialist_cli_support import redact_cli_error
 from agentorchestra.services.promotion import reset_working_from_fixture
+
+CRITICAL_RECOVERY_EXIT_CODE = 9
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,15 +31,31 @@ def main(argv: Sequence[str] | None = None, *, settings: Settings | None = None)
         return 2
     try:
         result = reset_working_from_fixture(settings=resolved_settings)
+    except PromotionRollbackError as exc:
+        print("reset status: critical")
+        print("Critical: working-site recovery is required")
+        print(f"error: {redact_cli_error(str(exc), resolved_settings)}")
+        if exc.recovery_paths:
+            print(f"recovery paths: {', '.join(exc.recovery_paths)}")
+        return CRITICAL_RECOVERY_EXIT_CODE
+    except PromotionError as exc:
+        print("reset status: failed")
+        print(f"working restored: {'yes' if exc.working_restored else 'no'}")
+        print(f"error: {redact_cli_error(str(exc), resolved_settings)}")
+        return 1
     except AgentOrchestraError as exc:
         print("reset status: failed")
         print(f"error: {redact_cli_error(str(exc), resolved_settings)}")
         return 1
     print("reset status: succeeded")
+    print(f"reset transaction: {result.status.value}")
     print(f"working reset: {'yes' if result.working_reset else 'no'}")
     print(f"working matches fixture: {'yes' if result.working_matches_fixture else 'no'}")
     print(f"temporary candidate cleaned: {'yes' if result.candidate_cleaned else 'no'}")
     print(f"temporary backup cleaned: {'yes' if result.backup_cleaned else 'no'}")
+    print(f"final content digest: {result.final_working_digest}")
+    for warning in result.warnings:
+        print(f"cleanup warning: {warning}")
     return 0 if result.working_matches_fixture else 1
 
 

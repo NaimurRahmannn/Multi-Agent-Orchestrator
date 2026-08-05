@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from pydantic import ValidationError
 
 from agentorchestra.config import Settings, get_settings
-from agentorchestra.exceptions import AgentOrchestraError
+from agentorchestra.exceptions import AgentOrchestraError, PromotionRollbackError
 from agentorchestra.flow import AgentOrchestraFlow
 from agentorchestra.models import EditRequest
 from agentorchestra.pipeline_models import EditOutcomeStatus, EditRunReport
@@ -21,6 +21,7 @@ EXIT_CODES = {
     EditOutcomeStatus.UNSUPPORTED_SPECIALIST: 7,
     EditOutcomeStatus.BLOCKED: 8,
 }
+CRITICAL_RECOVERY_EXIT_CODE = 9
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,9 +51,18 @@ def main(
         return 2
     try:
         request = EditRequest(target_page=args.target_page, instruction=args.instruction)
-        report = (flow or AgentOrchestraFlow(settings=resolved_settings)).run(request)
+        report = (flow or AgentOrchestraFlow(settings=resolved_settings)).kickoff(
+            inputs={"request": request.model_dump(mode="json")}
+        )
+        report = EditRunReport.model_validate(report)
         print_edit_run_report(report, resolved_settings)
         return EXIT_CODES[report.status]
+    except PromotionRollbackError as exc:
+        print("Critical: working-site recovery is required")
+        print(f"error: {redact_cli_error(str(exc), resolved_settings)}")
+        if exc.recovery_paths:
+            print(f"recovery paths: {', '.join(exc.recovery_paths)}")
+        return CRITICAL_RECOVERY_EXIT_CODE
     except (AgentOrchestraError, ValidationError, ValueError) as exc:
         print(f"Edit Flow failed: {redact_cli_error(str(exc), resolved_settings)}")
         return 1
@@ -94,7 +104,15 @@ def print_edit_run_report(report: EditRunReport, settings: Settings | None = Non
         }
         print(f"qa token usage: {usage if usage else 'unavailable'}")
     print(f"working updated: {'yes' if report.working_updated else 'no'}")
+    if report.working_restored:
+        print("working restored: yes")
     print(f"staging cleaned: {'yes' if report.staging_cleaned else 'no'}")
+    if report.promotion_status is not None:
+        print(f"promotion status: {report.promotion_status.value}")
+    if report.final_working_digest is not None:
+        print(f"final content digest: {report.final_working_digest}")
+    for warning in report.cleanup_warnings:
+        print(f"cleanup warning: {_safe(warning, settings)}")
     print(f"total latency ms: {report.total_latency_ms:.1f}")
     if report.error:
         print(f"error: {_safe(report.error, settings)}")

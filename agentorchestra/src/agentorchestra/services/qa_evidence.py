@@ -6,6 +6,10 @@ from collections.abc import Iterable
 
 from agentorchestra.exceptions import ExecutionEvidenceError
 from agentorchestra.models import EditRequest, ManagerRoutingPlan, RoutingStatus, SpecialistName
+from agentorchestra.path_safety import (
+    contains_absolute_path_text,
+    validate_relative_site_path,
+)
 from agentorchestra.pipeline_models import QAEvidenceBundle, QAPatchEvidence, QASpecialistEvidence
 from agentorchestra.specialist_models import (
     SpecialistExecutionReport,
@@ -59,6 +63,10 @@ def validate_execution_evidence(
         raise ExecutionEvidenceError("Changed files and applied patch files must match exactly.")
     if _contains_asset(diff_report.changed_files):
         raise ExecutionEvidenceError("QA evidence must not include asset changes.")
+    for file in diff_report.changed_files:
+        _validate_evidence_path(file)
+    for file_diff in diff_report.files:
+        _validate_evidence_path(file_diff.file)
 
     for result in results:
         _validate_result_ownership(
@@ -66,9 +74,11 @@ def validate_execution_evidence(
             result.patch_results,
             specialist_report.request.target_page,
         )
-    _reject_absolute_path_text(diff_report.combined_diff)
-    for file_diff in diff_report.files:
-        _reject_absolute_path_text(file_diff.unified_diff)
+    for result in results:
+        for patch in result.patch_results:
+            _validate_evidence_path(patch.file)
+            _reject_absolute_path_text(patch.summary)
+            _reject_absolute_path_text(patch.message)
 
 
 def build_qa_evidence_bundle(
@@ -77,6 +87,7 @@ def build_qa_evidence_bundle(
     plan: ManagerRoutingPlan,
     specialist_report: SpecialistExecutionReport,
     diff_report: DiffReport,
+    site_content_digest: str | None = None,
 ) -> QAEvidenceBundle:
     """Build stable, prompt-safe QA evidence from runtime objects only."""
     validate_execution_evidence(plan, specialist_report, diff_report)
@@ -119,6 +130,7 @@ def build_qa_evidence_bundle(
         "combined_diff": diff_report.combined_diff,
         "total_added_lines": diff_report.total_added_lines,
         "total_removed_lines": diff_report.total_removed_lines,
+        "site_content_digest": site_content_digest,
     }
     digest = _stable_digest(payload)
     return QAEvidenceBundle(**payload, evidence_digest=digest)
@@ -165,5 +177,12 @@ def _stable_digest(payload: dict[str, object]) -> str:
 
 
 def _reject_absolute_path_text(text: str) -> None:
-    if ":\\" in text or ":/" in text:
+    if contains_absolute_path_text(text):
         raise ExecutionEvidenceError("QA evidence must not include absolute paths.")
+
+
+def _validate_evidence_path(value: str) -> None:
+    try:
+        validate_relative_site_path(value)
+    except ValueError as exc:
+        raise ExecutionEvidenceError("QA evidence paths must be safe and relative.") from exc
