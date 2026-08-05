@@ -21,7 +21,9 @@ class ProposePatchInput(BaseModel):
         min_length=1,
         description=(
             "Verbatim unique substring copied from the content field of the most recent "
-            "read_file result for this file; preserve whitespace and newlines exactly."
+            "read_file result for this file; preserve whitespace and newlines exactly. "
+            "Do not use an empty string. For insertions, anchor on a real exact substring "
+            "such as a closing tag and include the inserted text in new_text."
         ),
     )
     new_text: str = Field(

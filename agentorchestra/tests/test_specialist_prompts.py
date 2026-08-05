@@ -5,6 +5,7 @@ from agentorchestra.prompts.specialists import (
     SPECIALIST_TASK_EXPECTED_OUTPUT,
     build_specialist_task_description,
 )
+from agentorchestra.prompts.seo import SEO_EDIT_RULES
 from tests.specialist_helpers import execute_plan, request
 
 
@@ -66,6 +67,14 @@ def test_completion_prompt_forbids_success_without_applied_evidence():
 
     assert "at least one propose_patch result returned status applied" in prompt
     assert "if all attempts were rejected, return blocked" in prompt
+
+
+def test_seo_prompt_requires_real_anchor_for_insertions():
+    prompt = SEO_EDIT_RULES.casefold()
+
+    assert "never send empty old_text" in prompt
+    assert "</head>" in prompt
+    assert "real replacement" in prompt
 
 
 def test_task_context_contains_only_safe_bounded_context():

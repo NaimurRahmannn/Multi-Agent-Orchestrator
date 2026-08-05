@@ -30,6 +30,8 @@ Edit mode:
 - Use read_file and propose_patch only.
 - Read a bounded range containing the exact target before every patch.
 - Copy old_text verbatim from the latest read result and make the smallest unique replacement.
+- Never send empty old_text.
+- When adding a new meta description or other head tag, read the head section and use an exact anchor such as </head> so the patch is a real replacement, not a guessed insertion.
 - Patch only the selected HTML page and stop after the narrow SEO assignment is applied.
 - Return completed only after propose_patch reports an applied patch. Return no findings.
 """.strip()
