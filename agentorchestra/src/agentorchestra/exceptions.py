@@ -14,6 +14,22 @@ class ManagerOutputError(AgentOrchestraError):
     """Raised when Manager output cannot be converted into the routing contract."""
 
 
+class SpecialistExecutionError(AgentOrchestraError):
+    """Raised when specialist execution crosses an internal safety boundary."""
+
+
+class SpecialistOutputError(SpecialistExecutionError):
+    """Raised when specialist output cannot be converted into its strict contract."""
+
+
+class UnsupportedSpecialistError(SpecialistExecutionError):
+    """Raised when this stage is asked to execute an unavailable specialist."""
+
+
+class SpecialistPlanError(SpecialistExecutionError):
+    """Raised when a Manager plan is not executable by the HTML/CSS stage."""
+
+
 class DomainValidationError(AgentOrchestraError):
     """Raised by pure domain helpers outside Pydantic input validation."""
 

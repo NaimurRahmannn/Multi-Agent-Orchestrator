@@ -7,7 +7,7 @@ import shutil
 import stat
 import tempfile
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from pathlib import Path, PurePath
 
 from pydantic import ValidationError
@@ -177,10 +177,14 @@ def read_file(
     file: str,
     start_line: int = 1,
     end_line: int | None = None,
+    allowed_files: Collection[str] | None = None,
     limits: WorkspaceLimits = DEFAULT_WORKSPACE_LIMITS,
 ) -> FileReadResult:
     """Read a bounded one-based line range from an approved staged text file."""
     validate_staged_site(handle)
+    approved_scope = normalize_allowed_files(allowed_files)
+    if approved_scope is not None and file not in approved_scope:
+        raise FileToolError(f"file is outside this assignment's approved read scope: {file}")
     path = _resolve_tool_file(handle, file)
     if start_line < 1:
         raise FileToolError("start_line must be at least 1.")
@@ -198,7 +202,7 @@ def read_file(
     except UnicodeDecodeError as exc:
         raise FileToolError(f"Cannot read {file}: file is not valid UTF-8.") from exc
 
-    lines = content.splitlines(keepends=True)
+    lines = _normalize_newlines(content).splitlines(keepends=True)
     total_lines = len(lines)
     if total_lines == 0:
         raise FileToolError("Cannot read an empty file.")
@@ -224,6 +228,7 @@ def propose_patch(
     old_text: str,
     new_text: str,
     summary: str,
+    allowed_files: Collection[str] | None = None,
     limits: WorkspaceLimits = DEFAULT_WORKSPACE_LIMITS,
     replace_function: ReplaceFunction | None = None,
     validation_function: ValidationFunction | None = None,
@@ -236,6 +241,15 @@ def propose_patch(
 
     safe_file = _safe_result_file(file)
     safe_summary = _safe_result_summary(summary)
+    approved_scope = normalize_allowed_files(allowed_files)
+    if approved_scope is not None and file not in approved_scope:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=safe_file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.UNAUTHORIZED_FILE,
+            message="File is outside this assignment's approved patch scope.",
+        )
     old_size = len(old_text.encode("utf-8"))
     new_size = len(new_text.encode("utf-8"))
     if old_size > limits.max_old_text_bytes or new_size > limits.max_new_text_bytes:
@@ -326,7 +340,9 @@ def propose_patch(
             before_sha256=before_hash,
         )
 
-    match_positions = find_exact_match_positions(content, proposal.old_text)
+    old_text = _adapt_to_file_newlines(content, proposal.old_text)
+    new_text = _adapt_to_file_newlines(content, proposal.new_text)
+    match_positions = find_exact_match_positions(content, old_text)
     if not match_positions:
         return _rejected_patch(
             specialist=trusted_specialist,
@@ -351,7 +367,7 @@ def propose_patch(
         )
 
     position = match_positions[0]
-    modified = content[:position] + proposal.new_text + content[position + len(proposal.old_text) :]
+    modified = content[:position] + new_text + content[position + len(old_text) :]
     modified_bytes = modified.encode("utf-8")
     if modified_bytes == original_bytes:
         return _rejected_patch(
@@ -489,8 +505,8 @@ def generate_diff(
                 f"Cannot generate diff for {relative_name}: file is not valid UTF-8."
             ) from exc
 
-        working_lines = working_text.splitlines(keepends=True)
-        staged_lines = staged_text.splitlines(keepends=True)
+        working_lines = _normalize_newlines(working_text).splitlines(keepends=True)
+        staged_lines = _normalize_newlines(staged_text).splitlines(keepends=True)
         unified_diff = _build_unified_diff(relative_name, working_lines, staged_lines)
         added_lines, removed_lines = _count_changed_lines(working_lines, staged_lines)
         combined_bytes += len(unified_diff.encode("utf-8"))
@@ -655,6 +671,33 @@ def _validate_simple_edit_file(file: str) -> None:
         raise FileToolError("file path must target an approved .html or .css file.")
 
 
+def normalize_allowed_files(allowed_files: Collection[str] | None) -> tuple[str, ...] | None:
+    """Validate and deterministically normalize a trusted assignment-level file scope."""
+    if allowed_files is None:
+        return None
+    normalized: set[str] = set()
+    for file in allowed_files:
+        if not isinstance(file, str):
+            raise FileToolError("Approved file scope must contain only filenames.")
+        _validate_simple_edit_file(file)
+        normalized.add(file)
+    if not normalized:
+        raise FileToolError("Approved file scope must not be empty.")
+    return tuple(sorted(normalized))
+
+
+def _normalize_newlines(content: str) -> str:
+    return content.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _adapt_to_file_newlines(content: str, patch_text: str) -> str:
+    """Adapt tool-read LF text to a consistently CRLF staged file without fuzzy matching."""
+    without_crlf = content.replace("\r\n", "")
+    if "\r\n" in content and "\n" not in without_crlf and "\r" not in without_crlf:
+        return _normalize_newlines(patch_text).replace("\n", "\r\n")
+    return patch_text
+
+
 def _validate_patch_target(
     file: str,
     specialist: SpecialistName,
@@ -724,7 +767,8 @@ def _atomic_replace_bytes(
     replacement_completed = False
     try:
         target_mode = stat.S_IMODE(target.stat(follow_symlinks=False).st_mode)
-        os.fchmod(descriptor, target_mode)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, target_mode)
         with os.fdopen(descriptor, "wb") as stream:
             descriptor = -1
             stream.write(content)

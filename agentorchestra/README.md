@@ -14,7 +14,7 @@ The foundation work implements project setup and feasibility only:
 - Manual feasibility checks for CrewAI imports, Groq connectivity, structured Manager output, Lighthouse SEO-only execution, and Playwright Chromium screenshots.
 - Deterministic tests that do not call Groq, Lighthouse, or browser automation.
 
-Production HTML, CSS, SEO, QA execution agents, the full Flow orchestration, and Streamlit UI are not implemented yet.
+Production Manager routing, staged workspace tooling, and HTML/CSS specialist previews are implemented incrementally. SEO execution, QA execution, promotion, the complete Flow, and Streamlit UI are not implemented yet.
 
 ## Domain Contracts Status
 
@@ -110,7 +110,7 @@ This report path is ignored by Git.
 
 Automated tests use fakes and make no live LLM calls. Live Manager and benchmark commands require `.env` values for `GROQ_API_KEY` and `GROQ_MODEL`, require network access, and consume Groq tokens.
 
-Specialist execution agents, QA execution, staged-site promotion, Lighthouse production integration, Playwright production integration, Streamlit UI, and full production Flow orchestration remain unimplemented.
+HTML/CSS specialist execution is documented below. SEO execution, QA execution, staged-site promotion, Lighthouse production integration, Playwright production integration, Streamlit UI, and full production Flow orchestration remain unimplemented.
 
 ## Workspace Tooling Status
 
@@ -127,7 +127,40 @@ The workspace tooling work adds the deterministic staged-workspace and patch too
 - `generate_diff()` produces deterministic per-file and combined unified diffs with added/removed line totals and a bounded output size.
 - `scripts/demo_workspace.py` demonstrates staging, reading, patching, diff generation, and cleanup without any Groq call.
 
-Workspace tooling does not add HTML, CSS, SEO, or QA agents. No specialist LLM execution, Manager-to-specialist orchestration, QA acceptance, promotion, browser automation, Lighthouse execution, or UI work is implemented here.
+The workspace tooling remains deterministic infrastructure. HTML/CSS agents consume it only through tools bound by trusted application code; QA acceptance, promotion, browser automation, Lighthouse production execution, and UI work are not implemented here.
+
+## HTML/CSS Specialist Status
+
+This stage adds two production CrewAI specialists and a temporary headless execution preview:
+
+- The HTML specialist owns narrow structural markup, elements, attributes, explicit alt text, labels, semantic markup, and broken heading structure. It may read and patch only the selected target HTML page.
+- The CSS specialist owns colors, typography, visual heading size, spacing, borders, layout CSS, and narrow responsive presentation. It may read the selected target page and `style.css`, but may patch only `style.css`.
+- Each agent has `allow_delegation=False`, no memory or planning, bounded iterations and retries, and exactly the bound `read_file` and `propose_patch` tools.
+- The workspace, specialist identity, and approved assignment files are hidden trusted fields and cannot be supplied or overridden by the model.
+- One `PatchEvidenceRecorder` is created per specialist invocation. It records actual applied and rejected `PatchExecutionResult` values in tool-call order; a model completion summary is never treated as proof of a write.
+- `SpecialistCompletion` strictly validates the concise `completed` or `blocked` statement. Runtime `succeeded`, `blocked`, and `failed` statuses are derived locally from completion validity and actual patch evidence.
+- `SpecialistExecutionService` validates an HTML/CSS-only Manager plan, runs selected specialists sequentially in plan order, stops on blocked or failed work, and generates one authoritative combined staged diff.
+
+Run one explicitly selected specialist:
+
+```bash
+python scripts/run_specialist.py \
+  --specialist css \
+  --target-page index.html \
+  --task "Change the primary button background to dark blue"
+```
+
+Run the temporary routed HTML/CSS preview:
+
+```bash
+python scripts/run_edit_preview.py \
+  --target-page index.html \
+  --instruction "Make the heading bigger and improve the hero image alt text"
+```
+
+Both commands require valid `GROQ_API_KEY` and `GROQ_MODEL` values plus network access and consume Groq tokens. They create a copy under `sites/staging/<run_id>`, never edit `sites/working` or `sites/fixture`, and clean staging in a `finally` block by default. Use `--keep-staging` only when manual inspection is needed.
+
+These commands do not run QA, promote staging, or modify working. SEO execution is rejected before staging. The routed preview is not the final CrewAI Flow. Lighthouse production execution, screenshots, Streamlit, and the final promotion workflow remain later work.
 
 ## Prerequisites
 
@@ -148,7 +181,7 @@ Fill in `.env` only when running live Groq checks:
 
 ```text
 GROQ_API_KEY=
-GROQ_MODEL=
+GROQ_MODEL=openai/gpt-oss-20b
 APP_ENV=development
 LOG_LEVEL=INFO
 AGENTORCHESTRA_ROOT=
@@ -233,6 +266,13 @@ pytest tests/test_workspace_models.py -q
 pytest tests/test_workspace_service.py -q
 pytest tests/test_workspace_tools.py -q
 pytest tests/test_workspace_demo.py -q
+pytest tests/test_specialist_models.py -q
+pytest tests/test_specialist_tools_evidence.py -q
+pytest tests/test_specialist_prompts.py -q
+pytest tests/test_html_agent.py tests/test_css_agent.py -q
+pytest tests/test_specialist_runner.py -q
+pytest tests/test_specialist_execution.py -q
+pytest tests/test_specialist_cli.py tests/test_edit_preview_cli.py -q
 ```
 
 ## Sample Site

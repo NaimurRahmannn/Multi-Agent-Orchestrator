@@ -21,6 +21,8 @@ plot = "agentorchestra.main:plot"
 run_with_trigger = "agentorchestra.main:run_with_trigger"
 agentorchestra-manager = "agentorchestra.scripts.run_manager:main"
 agentorchestra-routing-benchmark = "agentorchestra.scripts.run_routing_benchmark:main"
+agentorchestra-specialist = "agentorchestra.scripts.run_specialist:main"
+agentorchestra-edit-preview = "agentorchestra.scripts.run_edit_preview:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -271,7 +271,10 @@ def test_validate_staged_site_rejects_extra_files_and_symlinks(tmp_path):
 
     (handle.path / "extra.html").unlink()
     (handle.path / "style.css").unlink()
-    (handle.path / "style.css").symlink_to(settings.working_site_dir / "style.css")
+    try:
+        (handle.path / "style.css").symlink_to(settings.working_site_dir / "style.css")
+    except OSError as exc:
+        pytest.skip(f"symlinks unavailable: {exc}")
 
     with pytest.raises(SiteValidationError):
         validate_staged_site(handle)

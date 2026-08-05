@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 import time
 from collections.abc import Callable, Mapping
-from pathlib import Path
 from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
@@ -21,6 +18,7 @@ from agentorchestra.prompts.manager import (
     MANAGER_ROUTING_TASK_EXPECTED_OUTPUT,
     MANAGER_SYSTEM_PROMPT,
 )
+from agentorchestra.runtime import localize_crewai_paths
 
 CrewExecutor = Callable[[Any, dict[str, Any]], Any]
 CrewFactory = Callable[[GroqConfiguration], Any]
@@ -30,17 +28,6 @@ Clock = Callable[[], float]
 class ManagerRoutingInterface(Protocol):
     def route(self, request: EditRequest) -> ManagerRunResult:
         """Route one validated edit request."""
-
-
-def localize_crewai_paths() -> None:
-    """Keep CrewAI runtime caches in a writable temp directory."""
-    base = Path(tempfile.gettempdir()) / "agentorchestra-crewai"
-    os.environ.setdefault("XDG_DATA_HOME", str(base / "data"))
-    os.environ.setdefault("XDG_CONFIG_HOME", str(base / "config"))
-    os.environ.setdefault("XDG_CACHE_HOME", str(base / "cache"))
-    os.environ.setdefault("OTEL_SDK_DISABLED", "true")
-    os.environ.setdefault("CREWAI_DISABLE_TELEMETRY", "true")
-    os.environ.setdefault("CREWAI_DISABLE_TRACKING", "true")
 
 
 def crewai_model_name(model: str) -> str:
