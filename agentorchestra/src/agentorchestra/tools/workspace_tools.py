@@ -17,14 +17,29 @@ class ReadFileInput(BaseModel):
 
 class ProposePatchInput(BaseModel):
     file: str = Field(description="Simple staged-site filename, such as index.html or style.css.")
-    old_text: str = Field(min_length=1, description="Exact existing text to replace.")
-    new_text: str = Field(min_length=1, description="Exact replacement text.")
+    old_text: str = Field(
+        min_length=1,
+        description=(
+            "Verbatim unique substring copied from the content field of the most recent "
+            "read_file result for this file; preserve whitespace and newlines exactly."
+        ),
+    )
+    new_text: str = Field(
+        min_length=1,
+        description=(
+            "Minimal replacement made by copying old_text and changing only the required "
+            "characters; preserve all unaffected text exactly."
+        ),
+    )
     summary: str = Field(min_length=1, description="Concise summary of the proposed edit.")
 
 
 class ReadFileTool(BaseTool):
     name: str = "read_file"
-    description: str = "Read a bounded line range from one approved file in the staged site."
+    description: str = (
+        "Read a bounded line range from one approved staged file. Before patching, copy "
+        "old_text verbatim from the returned content field."
+    )
     args_schema: type[BaseModel] = ReadFileInput
     handle: WorkspaceHandle = Field(exclude=True)
     allowed_files: tuple[str, ...] | None = Field(default=None, exclude=True)
@@ -47,7 +62,10 @@ class ReadFileTool(BaseTool):
 
 class ProposePatchTool(BaseTool):
     name: str = "propose_patch"
-    description: str = "Apply one exact unique text replacement to an approved staged-site file."
+    description: str = (
+        "Apply one exact unique replacement. old_text must be copied verbatim from the most "
+        "recent read_file content for the same staged file."
+    )
     args_schema: type[BaseModel] = ProposePatchInput
     handle: WorkspaceHandle = Field(exclude=True)
     specialist: SpecialistName = Field(exclude=True)

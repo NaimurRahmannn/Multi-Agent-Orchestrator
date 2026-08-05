@@ -56,6 +56,7 @@ def test_html_task_requests_native_strict_completion(tmp_path):
     assert task.guardrail_max_retries == 0
     assert task.async_execution is False
     assert "Allowed patch files" in task.description
+    assert "old_text copied from its content field" in task.description
 
 
 def test_specialist_runner_initialization_defers_llm_construction(monkeypatch):

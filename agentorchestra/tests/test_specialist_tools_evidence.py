@@ -55,6 +55,46 @@ def test_patch_tool_records_actual_applied_and_rejected_results(tmp_path):
     assert [result.status.value for result in recorder.snapshot()] == ["rejected", "applied"]
 
 
+def test_exact_grouped_css_anchor_supports_narrow_single_selector_override(tmp_path):
+    settings = make_settings(tmp_path)
+    grouped_css = (
+        ".hero-copy h1,\n"
+        ".page-intro h1 {\n"
+        "  margin: 0 0 16px;\n"
+        "  font-size: 3rem;\n"
+        "  line-height: 1.1;\n"
+        "}\n"
+    )
+    for site_dir in (settings.fixture_site_dir, settings.working_site_dir):
+        (site_dir / "style.css").write_text(grouped_css, encoding="utf-8")
+    handle = create_staged_copy(settings=settings, run_id_factory=lambda: "grouped-selector")
+    read_tool = ReadFileTool(handle=handle, allowed_files=("style.css",))
+    patch_tool = ProposePatchTool(
+        handle=handle,
+        specialist=SpecialistName.CSS,
+        allowed_files=("style.css",),
+    )
+    read_payload = json.loads(
+        read_tool._run(file="style.css", start_line=1, end_line=6)
+    )
+    old_block = read_payload["content"]
+    new_block = old_block + "\n.hero-copy h1 {\n  font-size: 3.5rem;\n}\n"
+
+    result = json.loads(
+        patch_tool._run(
+            file="style.css",
+            old_text=old_block,
+            new_text=new_block,
+            summary="Add a narrow hero heading override.",
+        )
+    )
+    updated = (handle.path / "style.css").read_text(encoding="utf-8")
+
+    assert result["status"] == "applied"
+    assert ".hero-copy h1,\n.page-intro h1 {" in updated
+    assert ".hero-copy h1 {\n  font-size: 3.5rem;\n}" in updated
+
+
 def test_existing_patch_tool_behavior_works_without_recorder(tmp_path):
     settings = make_settings(tmp_path)
     handle = create_staged_copy(settings=settings, run_id_factory=lambda: "no-recorder")
@@ -145,6 +185,13 @@ def test_model_schema_cannot_override_trusted_context(tmp_path):
         "new_text",
         "summary",
     }
+    read_description = read_tool.description.casefold()
+    patch_description = patch_tool.description.casefold()
+    patch_properties = patch_tool.args_schema.model_json_schema()["properties"]
+    assert "copy old_text verbatim" in read_description
+    assert "most recent read_file content" in patch_description
+    assert "verbatim unique substring" in patch_properties["old_text"]["description"].casefold()
+    assert "preserve all unaffected text" in patch_properties["new_text"]["description"].casefold()
     serialized = patch_tool.model_dump(mode="json")
     for hidden in ("handle", "workspace", "specialist", "allowed_files", "recorder"):
         assert hidden not in serialized

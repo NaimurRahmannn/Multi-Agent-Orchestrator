@@ -82,5 +82,7 @@ def test_css_task_names_target_page_and_style_css_without_site_dump(tmp_path):
 
     assert "index.html" in task.description
     assert "style.css" in task.description
+    assert "verbatim exact-patch protocol" in task.description
+    assert "completion only after status applied" in task.description
     assert "<!doctype html>" not in task.description
     assert task.output_pydantic.__name__ == "SpecialistCompletion"
