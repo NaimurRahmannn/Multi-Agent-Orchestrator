@@ -23,6 +23,8 @@ agentorchestra-manager = "agentorchestra.scripts.run_manager:main"
 agentorchestra-routing-benchmark = "agentorchestra.scripts.run_routing_benchmark:main"
 agentorchestra-specialist = "agentorchestra.scripts.run_specialist:main"
 agentorchestra-edit-preview = "agentorchestra.scripts.run_edit_preview:main"
+agentorchestra-edit = "agentorchestra.scripts.run_edit_flow:main"
+agentorchestra-reset = "agentorchestra.scripts.reset_demo_site:main"
 
 [build-system]
 requires = ["hatchling"]

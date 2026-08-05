@@ -36,3 +36,27 @@ class DomainValidationError(AgentOrchestraError):
 
 class QACoverageError(DomainValidationError):
     """Raised when QA criterion coverage does not match Manager criteria."""
+
+
+class QAExecutionError(AgentOrchestraError):
+    """Raised when the live QA operation cannot complete."""
+
+
+class QAOutputError(QAExecutionError):
+    """Raised when QA output cannot be converted into the strict QA contract."""
+
+
+class ExecutionEvidenceError(AgentOrchestraError):
+    """Raised when deterministic specialist evidence is inconsistent before QA."""
+
+
+class PromotionError(AgentOrchestraError):
+    """Raised when controlled promotion cannot safely update working."""
+
+
+class PromotionRollbackError(PromotionError):
+    """Raised when promotion rollback cannot be completed or verified."""
+
+
+class FlowExecutionError(AgentOrchestraError):
+    """Raised when the edit Flow reaches an invalid lifecycle state."""

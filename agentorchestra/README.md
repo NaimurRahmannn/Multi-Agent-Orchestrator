@@ -14,7 +14,7 @@ The foundation work implements project setup and feasibility only:
 - Manual feasibility checks for CrewAI imports, Groq connectivity, structured Manager output, Lighthouse SEO-only execution, and Playwright Chromium screenshots.
 - Deterministic tests that do not call Groq, Lighthouse, or browser automation.
 
-Production Manager routing, staged workspace tooling, and HTML/CSS specialist previews are implemented incrementally. SEO execution, QA execution, promotion, the complete Flow, and Streamlit UI are not implemented yet.
+Production Manager routing, staged workspace tooling, HTML/CSS specialist previews, QA-controlled promotion, and reset are implemented incrementally. SEO execution, Lighthouse production integration, screenshots, and Streamlit UI are not implemented yet.
 
 ## Domain Contracts Status
 
@@ -29,7 +29,7 @@ The domain-contract work adds the production configuration and strict models fut
 
 Supported routing statuses are `execute`, `clarification_required`, and `out_of_scope`. Supported specialist names are `html`, `css`, and `seo`; QA is intentionally not a selectable specialist.
 
-These models are contracts only. Production agents, production Flow orchestration, production Lighthouse services, production Playwright services, and the Streamlit UI are still future work.
+These models are contracts only. Production QA and Flow orchestration are documented below. Production Lighthouse services, production Playwright services, and the Streamlit UI are still future work.
 
 ## Manager Routing Status
 
@@ -110,7 +110,7 @@ This report path is ignored by Git.
 
 Automated tests use fakes and make no live LLM calls. Live Manager and benchmark commands require `.env` values for `GROQ_MANAGER_API_KEY` and `GROQ_MANAGER_MODEL`, require network access, and consume Groq tokens.
 
-HTML/CSS specialist execution is documented below. SEO execution, QA execution, staged-site promotion, Lighthouse production integration, Playwright production integration, Streamlit UI, and full production Flow orchestration remain unimplemented.
+HTML/CSS specialist execution and QA-controlled promotion are documented below. SEO execution, Lighthouse production integration, Playwright production integration, and Streamlit UI remain unimplemented.
 
 ## Workspace Tooling Status
 
@@ -127,7 +127,7 @@ The workspace tooling work adds the deterministic staged-workspace and patch too
 - `generate_diff()` produces deterministic per-file and combined unified diffs with added/removed line totals and a bounded output size.
 - `scripts/demo_workspace.py` demonstrates staging, reading, patching, diff generation, and cleanup without any Groq call.
 
-The workspace tooling remains deterministic infrastructure. HTML/CSS agents consume it only through tools bound by trusted application code; QA acceptance, promotion, browser automation, Lighthouse production execution, and UI work are not implemented here.
+The workspace tooling remains deterministic infrastructure. HTML/CSS agents consume it only through tools bound by trusted application code; QA acceptance and promotion are controlled by the Flow. Browser automation, Lighthouse production execution, and UI work are not implemented here.
 
 ## HTML/CSS Specialist Status
 
@@ -162,7 +162,67 @@ The routed command uses the Manager's key/model pair for routing and each select
 
 Live Manager and specialist LLM calls use a small provider retry budget for transient Groq rate limits. Short `retry after` TPM windows may pause and retry the same provider request up to two times. CrewAI agent and task retries remain disabled, so failed patch workflows are not replayed as a separate agent run.
 
-These commands do not run QA, promote staging, or modify working. SEO execution is rejected before staging. The routed preview is not the final CrewAI Flow. Lighthouse production execution, screenshots, Streamlit, and the final promotion workflow remain later work.
+These preview commands do not run QA, promote staging, or modify working. SEO execution is rejected before staging. Use the QA-controlled edit Flow below for accepted working-site updates. Lighthouse production execution, screenshots, and Streamlit remain later work.
+
+## QA-Controlled Edit Flow Status
+
+The production edit Flow now controls the HTML/CSS lifecycle:
+
+```text
+EditRequest
+  -> ManagerRouter
+  -> validated ManagerRoutingPlan
+  -> fresh staging copy
+  -> selected HTML/CSS specialists in Manager order
+  -> deterministic evidence validation
+  -> tool-free QA Agent
+  -> QA accept promotes staging to working
+  -> QA reject, blocked work, or failure discards staging
+```
+
+QA receives a deterministic evidence bundle containing the original request, Manager-selected specialists and assignments, exact acceptance criteria, actual applied/rejected patch metadata, changed files, and the final staged diff. QA has no tools and cannot edit files, invoke agents, promote staging, or discard staging. Each Manager acceptance criterion must be returned exactly once; QA accepts only when every criterion passes and rejects insufficient evidence.
+
+Before QA runs, the Flow validates that the specialist report succeeded, selected specialists match execution order, at least one patch was applied, changed files exactly match applied patch files, ownership boundaries are respected, the diff is non-empty, and no asset or absolute path appears in user-facing evidence.
+
+Run the full Flow only when you intend to allow live Groq calls and working-site promotion:
+
+```bash
+python scripts/run_edit_flow.py \
+  --target-page index.html \
+  --instruction "Change the primary call-to-action button background to dark blue" \
+  --apply
+```
+
+Without `--apply`, the command exits before any Groq call or mutation:
+
+```bash
+python scripts/run_edit_flow.py \
+  --target-page index.html \
+  --instruction "Change the primary call-to-action button background to dark blue"
+```
+
+Outcome exit codes:
+
+| Outcome | Exit code |
+|---|---:|
+| accepted | 0 |
+| failed | 1 |
+| missing `--apply` / usage guard | 2 |
+| rejected | 4 |
+| clarification_required | 5 |
+| out_of_scope | 6 |
+| unsupported_specialist | 7 |
+| blocked | 8 |
+
+On QA accept, the Flow revalidates the reviewed staged diff immediately before promotion. Promotion copies staging to a candidate, renames working to a backup, installs the candidate as working, validates the result, and removes temporary candidate/backup directories. If promotion fails after backup creation, the backup is restored. No persistent rollback history is kept.
+
+Reset the demo working site from the fixture with explicit confirmation:
+
+```bash
+python scripts/reset_demo_site.py --reset
+```
+
+The reset command uses the same candidate/backup replacement pattern and does not remove unrelated staging runs.
 
 ## Prerequisites
 
@@ -283,6 +343,10 @@ pytest tests/test_html_agent.py tests/test_css_agent.py -q
 pytest tests/test_specialist_runner.py -q
 pytest tests/test_specialist_execution.py -q
 pytest tests/test_specialist_cli.py tests/test_edit_preview_cli.py -q
+pytest tests/test_pipeline_models.py tests/test_qa_prompt.py tests/test_qa_agent.py -q
+pytest tests/test_qa_output.py tests/test_qa_runner.py tests/test_qa_evidence.py -q
+pytest tests/test_promotion_service.py tests/test_edit_flow.py -q
+pytest tests/test_edit_flow_cli.py tests/test_reset_demo_site.py -q
 ```
 
 ## Sample Site
