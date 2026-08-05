@@ -3,9 +3,13 @@ from types import SimpleNamespace
 import pytest
 
 from agentorchestra.config import GroqConfiguration, Settings
-from agentorchestra.exceptions import SpecialistOutputError, UnsupportedSpecialistError
+from agentorchestra.exceptions import SpecialistOutputError
 from agentorchestra.models import EditRequest, SpecialistAssignment, SpecialistName
-from agentorchestra.services.specialist_output import extract_specialist_completion
+from agentorchestra.seo_models import SEOCompletion, SEOExecutionMode, SEOFinding
+from agentorchestra.services.specialist_output import (
+    extract_seo_completion,
+    extract_specialist_completion,
+)
 from agentorchestra.services.specialist_runner import SpecialistRunner
 from agentorchestra.services.workspace import cleanup_staged_workspace, create_staged_copy
 from agentorchestra.specialist_models import SpecialistCompletion
@@ -22,28 +26,32 @@ def completion(status="completed"):
 
 
 def fake_agent_factory(specialist, recorder_ids=None, expected_model="test-model"):
-    def factory(*, workspace, target_page, recorder, groq, verbose):
+    def factory(*, workspace, target_page, recorder, groq, verbose, mode=None):
         assert groq.model == expected_model
         assert verbose is False
         if recorder_ids is not None:
             recorder_ids.append(id(recorder))
         read_scope = (
             (target_page,)
-            if specialist is SpecialistName.HTML
+            if specialist in {SpecialistName.HTML, SpecialistName.SEO}
             else tuple(sorted({target_page, "style.css"}))
         )
-        patch_scope = (target_page,) if specialist is SpecialistName.HTML else ("style.css",)
-        return SimpleNamespace(
-            tools=[
-                ReadFileTool(handle=workspace, allowed_files=read_scope),
+        patch_scope = (
+            (target_page,)
+            if specialist in {SpecialistName.HTML, SpecialistName.SEO}
+            else ("style.css",)
+        )
+        tools = [ReadFileTool(handle=workspace, allowed_files=read_scope)]
+        if mode is not SEOExecutionMode.DIAGNOSTIC:
+            tools.append(
                 ProposePatchTool(
                     handle=workspace,
                     specialist=specialist,
                     allowed_files=patch_scope,
                     recorder=recorder,
-                ),
-            ]
-        )
+                )
+            )
+        return SimpleNamespace(tools=tools)
 
     return factory
 
@@ -63,12 +71,19 @@ def make_runner(specialist, executor, *, clock=None, recorder_ids=None):
     )
 
 
-def run(runner, handle, specialist=SpecialistName.CSS, target_page="index.html"):
+def run(
+    runner,
+    handle,
+    specialist=SpecialistName.CSS,
+    target_page="index.html",
+    mode=SEOExecutionMode.EDIT,
+):
     return runner.run_specialist(
         EditRequest(target_page=target_page, instruction="Apply one narrow edit."),
         SpecialistAssignment(agent=specialist, task="Apply one narrow edit."),
         ["The requested staged edit is present."],
         handle,
+        mode=mode,
     )
 
 
@@ -94,9 +109,24 @@ def apply_html(crew, _inputs):
     return completion()
 
 
+def apply_seo(crew, _inputs):
+    crew.agent.tools[0]._run(file="index.html", start_line=1, end_line=11)
+    crew.agent.tools[1]._run(
+        file="index.html",
+        old_text="  <title>Home</title>\n",
+        new_text="  <title>Harbor Light Web Design Studio</title>\n",
+        summary="Improve the page title.",
+    )
+    return SEOCompletion(mode="edit", status="completed", summary="Updated page title.")
+
+
 @pytest.mark.parametrize(
     ("specialist", "executor", "expected_file"),
-    [(SpecialistName.HTML, apply_html, "index.html"), (SpecialistName.CSS, apply_css, "style.css")],
+    [
+        (SpecialistName.HTML, apply_html, "index.html"),
+        (SpecialistName.CSS, apply_css, "style.css"),
+        (SpecialistName.SEO, apply_seo, "index.html"),
+    ],
 )
 def test_applied_patch_produces_succeeded_from_actual_recorder(
     tmp_path, specialist, executor, expected_file
@@ -190,7 +220,9 @@ def test_crew_exception_is_failed_redacted_and_not_retried(tmp_path):
 def test_invalid_structured_output_is_failed(tmp_path):
     settings = make_settings(tmp_path)
     handle = create_staged_copy(settings=settings, run_id_factory=lambda: "runner-output")
-    result = run(make_runner(SpecialistName.CSS, lambda crew, inputs: {"status": "completed"}), handle)
+    result = run(
+        make_runner(SpecialistName.CSS, lambda crew, inputs: {"status": "completed"}), handle
+    )
 
     assert result.status == "failed"
     assert result.completion is None
@@ -259,6 +291,7 @@ def test_one_recorder_is_created_per_run(tmp_path):
     [
         (SpecialistName.HTML, "html-secret", "html-model", apply_html),
         (SpecialistName.CSS, "css-secret", "css-model", apply_css),
+        (SpecialistName.SEO, "seo-secret", "seo-model", apply_seo),
     ],
 )
 def test_specialist_runner_selects_matching_role_credentials(
@@ -270,9 +303,11 @@ def test_specialist_runner_selects_matching_role_credentials(
         groq_manager_api_key="manager-secret",
         groq_html_api_key="html-secret",
         groq_css_api_key="css-secret",
+        groq_seo_api_key="seo-secret",
         groq_manager_model="manager-model",
         groq_html_model="html-model",
         groq_css_model="css-model",
+        groq_seo_model="seo-model",
     )
     handle = create_staged_copy(
         settings=settings, run_id_factory=lambda: f"runner-key-{specialist.value}"
@@ -299,13 +334,33 @@ def test_specialist_runner_selects_matching_role_credentials(
     assert captured == [(expected_key, expected_model)]
 
 
-def test_seo_specialist_is_rejected_before_execution(tmp_path):
+def test_seo_diagnostic_returns_findings_without_patch_evidence(tmp_path):
     settings = make_settings(tmp_path)
     handle = create_staged_copy(settings=settings, run_id_factory=lambda: "runner-seo")
-    runner = SpecialistRunner(groq=GroqConfiguration(api_key="secret", model="test-model"))
+    finding = SEOFinding(
+        code="missing_description",
+        severity="warning",
+        title="Meta description is missing",
+        source_file="index.html",
+        evidence="No meta description element appears in the selected source.",
+        recommendation="Add one concise meta description.",
+    )
+    runner = make_runner(
+        SpecialistName.SEO,
+        lambda crew, inputs: SEOCompletion(
+            mode="diagnostic",
+            status="completed",
+            summary="Reviewed source SEO.",
+            findings=[finding],
+        ),
+    )
 
-    with pytest.raises(UnsupportedSpecialistError):
-        run(runner, handle, SpecialistName.SEO)
+    result = run(runner, handle, SpecialistName.SEO, mode=SEOExecutionMode.DIAGNOSTIC)
+
+    assert result.status == "succeeded"
+    assert result.patch_results == []
+    assert result.completion.findings == [finding]
+    assert extract_seo_completion(result.completion) == result.completion
 
 
 def test_output_extraction_supports_public_shapes_and_strictly_rejects_invalid():
@@ -315,9 +370,12 @@ def test_output_extraction_supports_public_shapes_and_strictly_rejects_invalid()
     assert extract_specialist_completion(SimpleNamespace(pydantic=native)) == native
     assert extract_specialist_completion(SimpleNamespace(json_dict=native.model_dump())) == native
     assert extract_specialist_completion(SimpleNamespace(raw=native.model_dump_json())) == native
-    assert extract_specialist_completion(
-        SimpleNamespace(tasks_output=[SimpleNamespace(pydantic=native)])
-    ) == native
+    assert (
+        extract_specialist_completion(
+            SimpleNamespace(tasks_output=[SimpleNamespace(pydantic=native)])
+        )
+        == native
+    )
     with pytest.raises(SpecialistOutputError):
         extract_specialist_completion(None)
     with pytest.raises(SpecialistOutputError):

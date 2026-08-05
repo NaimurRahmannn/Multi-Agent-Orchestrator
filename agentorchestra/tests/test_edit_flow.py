@@ -91,7 +91,9 @@ class FakeSpecialists:
             run_id=workspace.run_id,
             request=request,
             plan=plan,
-            status="succeeded" if all(status == "succeeded" for status in self.statuses) else self.statuses[-1],
+            status="succeeded"
+            if all(status == "succeeded" for status in self.statuses)
+            else self.statuses[-1],
             results=results,
             diff_report=diff,
             total_latency_ms=sum(result.latency_ms for result in results),
@@ -206,7 +208,7 @@ def test_flow_rejects_without_promotion(tmp_path):
     assert staged_run_dirs(settings) == []
 
 
-def test_flow_clarification_out_of_scope_and_seo_create_no_staging(tmp_path):
+def test_flow_clarification_and_out_of_scope_create_no_staging(tmp_path):
     for index, plan in enumerate(
         [
             ManagerRoutingPlan(
@@ -229,7 +231,6 @@ def test_flow_clarification_out_of_scope_and_seo_create_no_staging(tmp_path):
                 clarification_question=None,
                 rejection_reason="Unsupported.",
             ),
-            execute_plan("seo"),
         ]
     ):
         settings = make_settings(tmp_path / str(index))

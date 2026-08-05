@@ -11,15 +11,19 @@ from agentorchestra.agents.manager import (
     disable_crewai_prompt_cache_breakpoints,
     normalize_token_usage,
 )
+from agentorchestra.agents.seo_agent import build_seo_agent, build_seo_task
 from agentorchestra.agents.specialist_support import build_specialist_crew
 from agentorchestra.config import GroqAgentName, GroqConfiguration, Settings, get_settings
 from agentorchestra.exceptions import UnsupportedSpecialistError
 from agentorchestra.models import EditRequest, SpecialistAssignment, SpecialistName, TokenUsage
-from agentorchestra.services.specialist_output import extract_specialist_completion
+from agentorchestra.seo_models import SEOCompletion, SEOExecutionMode
+from agentorchestra.services.specialist_output import (
+    extract_seo_completion,
+    extract_specialist_completion,
+)
 from agentorchestra.services.workspace import read_file, validate_staged_site
 from agentorchestra.specialist_models import (
     SpecialistCompletion,
-    SpecialistCompletionStatus,
     SpecialistRunResult,
     SpecialistRunStatus,
 )
@@ -39,7 +43,7 @@ def default_specialist_crew_executor(crew: Any, inputs: dict[str, Any]) -> Any:
 
 
 class SpecialistRunner:
-    """Run exactly one HTML or CSS CrewAI operation and derive status from tool evidence."""
+    """Run one selected HTML, CSS, or SEO operation and derive status from evidence."""
 
     def __init__(
         self,
@@ -61,6 +65,7 @@ class SpecialistRunner:
             or {
                 SpecialistName.HTML: build_html_agent,
                 SpecialistName.CSS: build_css_agent,
+                SpecialistName.SEO: build_seo_agent,
             }
         )
         self._task_factories = dict(
@@ -68,6 +73,7 @@ class SpecialistRunner:
             or {
                 SpecialistName.HTML: build_html_task,
                 SpecialistName.CSS: build_css_task,
+                SpecialistName.SEO: build_seo_task,
             }
         )
         self._crew_factory = crew_factory
@@ -82,18 +88,24 @@ class SpecialistRunner:
         assignment: SpecialistAssignment,
         acceptance_criteria: Sequence[str],
         workspace: WorkspaceHandle,
+        mode: SEOExecutionMode = SEOExecutionMode.EDIT,
     ) -> SpecialistRunResult:
         validated_request = EditRequest.model_validate(request)
         validated_assignment = SpecialistAssignment.model_validate(assignment)
         specialist = validated_assignment.agent
-        if specialist not in {SpecialistName.HTML, SpecialistName.CSS}:
+        validated_mode = SEOExecutionMode(mode)
+        if specialist not in {SpecialistName.HTML, SpecialistName.CSS, SpecialistName.SEO}:
             raise UnsupportedSpecialistError(
-                f"Specialist {specialist.value} execution is not implemented in this stage."
+                f"Specialist {specialist.value} execution is not implemented."
+            )
+        if validated_mode is SEOExecutionMode.DIAGNOSTIC and specialist is not SpecialistName.SEO:
+            raise UnsupportedSpecialistError(
+                "Diagnostic mode is supported only by the SEO specialist."
             )
 
         started = self._clock()
         recorder: PatchEvidenceRecorder | None = None
-        completion: SpecialistCompletion | None = None
+        completion: SpecialistCompletion | SEOCompletion | None = None
         output: Any = None
         crew: Any = None
         groq: GroqConfiguration | None = None
@@ -110,18 +122,28 @@ class SpecialistRunner:
             )
             groq = self._resolve_groq(specialist)
             recorder = self._recorder_factory()
+            agent_kwargs = {
+                "workspace": workspace,
+                "target_page": validated_request.target_page,
+                "recorder": recorder,
+                "groq": groq,
+                "verbose": self._verbose,
+            }
+            if specialist is SpecialistName.SEO:
+                agent_kwargs["mode"] = validated_mode
             agent = self._agent_factories[specialist](
-                workspace=workspace,
-                target_page=validated_request.target_page,
-                recorder=recorder,
-                groq=groq,
-                verbose=self._verbose,
+                **agent_kwargs,
             )
+            task_kwargs = {
+                "agent": agent,
+                "request": validated_request,
+                "assignment": validated_assignment,
+                "acceptance_criteria": acceptance_criteria,
+            }
+            if specialist is SpecialistName.SEO:
+                task_kwargs["mode"] = validated_mode
             task = self._task_factories[specialist](
-                agent=agent,
-                request=validated_request,
-                assignment=validated_assignment,
-                acceptance_criteria=acceptance_criteria,
+                **task_kwargs,
             )
             crew = self._crew_factory(agent, task)
             disable_crewai_prompt_cache_breakpoints()
@@ -133,9 +155,13 @@ class SpecialistRunner:
                     "assignment": validated_assignment.task,
                 },
             )
-            completion = extract_specialist_completion(output)
+            completion = (
+                extract_seo_completion(output)
+                if specialist is SpecialistName.SEO
+                else extract_specialist_completion(output)
+            )
         except Exception as exc:
-            secrets = (groq.api_key,) if groq is not None else ()
+            secrets = self._all_secrets(groq)
             error = _safe_error("Specialist execution failed", exc, secrets=secrets)
 
         latency_ms = max(0.0, (self._clock() - started) * 1000)
@@ -149,14 +175,20 @@ class SpecialistRunner:
             try:
                 usage = normalize_token_usage(output, crew)
             except Exception as exc:
-                secrets = (groq.api_key,) if groq is not None else ()
+                secrets = self._all_secrets(groq)
                 error = _safe_error("Specialist token evidence was invalid", exc, secrets=secrets)
 
-        status, status_error = _derive_run_status(completion, patch_results, error)
+        status, status_error = _derive_run_status(
+            completion,
+            patch_results,
+            error,
+            mode=validated_mode,
+        )
         error = status_error
         model = _result_model(groq, self._groq, self._settings, specialist)
         return SpecialistRunResult(
             specialist=specialist,
+            mode=validated_mode,
             assignment=validated_assignment.task,
             status=status,
             completion=completion,
@@ -181,20 +213,45 @@ class SpecialistRunner:
             GroqAgentName(specialist.value)
         )
 
+    def _all_secrets(self, groq: GroqConfiguration | None) -> tuple[str, ...]:
+        configured = (self._settings or get_settings()).groq_api_key_values
+        if groq is None or groq.api_key in configured:
+            return configured
+        return (*configured, groq.api_key)
+
 
 def _derive_run_status(
-    completion: SpecialistCompletion | None,
+    completion: SpecialistCompletion | SEOCompletion | None,
     patch_results: Sequence[PatchExecutionResult],
     error: str | None,
+    *,
+    mode: SEOExecutionMode = SEOExecutionMode.EDIT,
 ) -> tuple[SpecialistRunStatus, str | None]:
     if error is not None:
         return SpecialistRunStatus.FAILED, error
     applied = any(result.status is PatchStatus.APPLIED for result in patch_results)
     if completion is None:
-        return SpecialistRunStatus.FAILED, "Specialist execution failed: completion output is missing."
-    if applied and completion.status is SpecialistCompletionStatus.COMPLETED:
+        return (
+            SpecialistRunStatus.FAILED,
+            "Specialist execution failed: completion output is missing.",
+        )
+    if mode is SEOExecutionMode.DIAGNOSTIC:
+        if patch_results:
+            return (
+                SpecialistRunStatus.FAILED,
+                "Specialist execution failed: diagnostic mode produced patch evidence.",
+            )
+        if isinstance(completion, SEOCompletion) and completion.status.value == "completed":
+            return SpecialistRunStatus.SUCCEEDED, None
+        if completion.status.value == "blocked":
+            return SpecialistRunStatus.BLOCKED, None
+        return (
+            SpecialistRunStatus.FAILED,
+            "Specialist execution failed: invalid diagnostic completion.",
+        )
+    if applied and completion.status.value == "completed":
         return SpecialistRunStatus.SUCCEEDED, None
-    if not applied and completion.status is SpecialistCompletionStatus.BLOCKED:
+    if not applied and completion.status.value == "blocked":
         return SpecialistRunStatus.BLOCKED, None
     if applied:
         return (
@@ -218,9 +275,7 @@ def _result_model(
     if explicit is not None:
         return crewai_model_name(explicit.model)
     configured_model = (
-        settings.groq_model_for(GroqAgentName(specialist.value))
-        if settings is not None
-        else None
+        settings.groq_model_for(GroqAgentName(specialist.value)) if settings is not None else None
     )
     if configured_model:
         return crewai_model_name(configured_model)

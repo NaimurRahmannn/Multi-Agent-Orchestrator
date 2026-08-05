@@ -24,6 +24,13 @@ from agentorchestra.models import (
     TokenUsage,
 )
 from agentorchestra.path_safety import reject_absolute_path_text, validate_relative_site_path
+from agentorchestra.seo_models import (
+    LighthouseRunStatus,
+    LighthouseSEOResult,
+    SEODiagnosticReport,
+    SEOExecutionMode,
+    SEOFinding,
+)
 from agentorchestra.specialist_models import (
     SpecialistExecutionReport,
     SpecialistExecutionStatus,
@@ -55,6 +62,7 @@ class EditOutcomeStatus(StrEnum):
     UNSUPPORTED_SPECIALIST = "unsupported_specialist"
     BLOCKED = "blocked"
     FAILED = "failed"
+    DIAGNOSTIC_COMPLETED = "diagnostic_completed"
 
 
 class QAPatchEvidence(AgentOrchestraModel):
@@ -85,11 +93,22 @@ class QASpecialistEvidence(AgentOrchestraModel):
     applied_patch_count: StrictInt = Field(ge=0)
     rejected_patch_count: StrictInt = Field(ge=0)
     patch_results: list[QAPatchEvidence] = Field(default_factory=list)
+    seo_mode: SEOExecutionMode | None = None
+    seo_findings: list[SEOFinding] = Field(default_factory=list)
 
     @field_validator("changed_files")
     @classmethod
     def validate_changed_files(cls, value: list[str]) -> list[str]:
         return [validate_relative_site_path(item) for item in value]
+
+    @model_validator(mode="after")
+    def validate_seo_fields(self) -> QASpecialistEvidence:
+        if self.specialist is SpecialistName.SEO:
+            if self.seo_mode is not SEOExecutionMode.EDIT or self.seo_findings:
+                raise ValueError("SEO QA evidence supports edit mode without diagnostic findings.")
+        elif self.seo_mode is not None or self.seo_findings:
+            raise ValueError("Non-SEO evidence must not contain SEO fields.")
+        return self
 
 
 class QAEvidenceBundle(AgentOrchestraModel):
@@ -106,6 +125,7 @@ class QAEvidenceBundle(AgentOrchestraModel):
     total_added_lines: StrictInt = Field(ge=0)
     total_removed_lines: StrictInt = Field(ge=0)
     site_content_digest: StrictStr | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    lighthouse_seo: LighthouseSEOResult | None = None
     evidence_digest: StrictStr = Field(pattern=r"^[0-9a-f]{64}$")
 
     @model_validator(mode="after")
@@ -114,6 +134,8 @@ class QAEvidenceBundle(AgentOrchestraModel):
             raise ValueError("target_page must match the original request.")
         if [assignment.agent for assignment in self.assignments] != self.selected_specialists:
             raise ValueError("assignments must follow selected specialist order.")
+        if [result.specialist for result in self.specialist_results] != self.selected_specialists:
+            raise ValueError("specialist results must follow selected specialist order.")
         if self.changed_files != sorted(self.changed_files):
             raise ValueError("changed_files must be deterministic and sorted.")
         validate_relative_site_path(self.target_page)
@@ -145,6 +167,20 @@ class QAEvidenceBundle(AgentOrchestraModel):
                 value,
                 message="user-facing evidence must not include absolute paths.",
             )
+        seo_selected = SpecialistName.SEO in self.selected_specialists
+        if seo_selected:
+            if (
+                self.lighthouse_seo is None
+                or self.lighthouse_seo.status is not LighthouseRunStatus.SUCCEEDED
+            ):
+                raise ValueError("SEO QA evidence requires successful Lighthouse SEO evidence.")
+            if (
+                self.lighthouse_seo.run_id != self.run_id
+                or self.lighthouse_seo.target_page != self.target_page
+            ):
+                raise ValueError("Lighthouse SEO evidence must match the QA run and target page.")
+        elif self.lighthouse_seo is not None:
+            raise ValueError("Lighthouse SEO evidence is forbidden when SEO was not selected.")
         return self
 
 
@@ -246,6 +282,8 @@ class EditRunReport(AgentOrchestraModel):
     plan: ManagerRoutingPlan | None = None
     run_id: StrictStr | None = Field(default=None, min_length=1, max_length=80)
     specialist_report: SpecialistExecutionReport | None = None
+    lighthouse_seo: LighthouseSEOResult | None = None
+    seo_diagnostic_report: SEODiagnosticReport | None = None
     qa_run: QARunResult | None = None
     reviewed_diff: DiffReport | None = None
     final_diff: DiffReport | None = None
@@ -282,6 +320,8 @@ class EditRunReport(AgentOrchestraModel):
             self._validate_no_execution()
         elif self.status is EditOutcomeStatus.BLOCKED:
             self._validate_blocked()
+        elif self.status is EditOutcomeStatus.DIAGNOSTIC_COMPLETED:
+            self._validate_diagnostic_completed()
         elif self.status is EditOutcomeStatus.FAILED and not self.error:
             raise ValueError("failed outcomes require an error.")
         if self.status is not EditOutcomeStatus.FAILED and self.error is not None:
@@ -292,16 +332,24 @@ class EditRunReport(AgentOrchestraModel):
                     value,
                     message="user-facing evidence must not include absolute paths.",
                 )
+        self._validate_lighthouse_selection()
         return self
 
     def _validate_accepted(self) -> None:
         if self.manager_result is None or self.plan is None or not self.run_id:
             raise ValueError("accepted outcomes require manager result, plan, and run ID.")
-        if self.specialist_report is None or self.specialist_report.status is not SpecialistExecutionStatus.SUCCEEDED:
+        if (
+            self.specialist_report is None
+            or self.specialist_report.status is not SpecialistExecutionStatus.SUCCEEDED
+        ):
             raise ValueError("accepted outcomes require successful specialist execution.")
         if self.qa_run is None or self.qa_run.result.verdict is not QAVerdict.ACCEPT:
             raise ValueError("accepted outcomes require an accepting QA run.")
-        if self.reviewed_diff is None or self.final_diff is None or self.reviewed_diff != self.final_diff:
+        if (
+            self.reviewed_diff is None
+            or self.final_diff is None
+            or self.reviewed_diff != self.final_diff
+        ):
             raise ValueError("accepted outcomes require identical reviewed and final diffs.")
         if self.reviewed_diff.is_empty:
             raise ValueError("accepted outcomes require a non-empty diff.")
@@ -330,7 +378,10 @@ class EditRunReport(AgentOrchestraModel):
     def _validate_rejected(self) -> None:
         if self.manager_result is None or self.plan is None:
             raise ValueError("rejected outcomes require manager result and plan.")
-        if self.specialist_report is None or self.specialist_report.status is not SpecialistExecutionStatus.SUCCEEDED:
+        if (
+            self.specialist_report is None
+            or self.specialist_report.status is not SpecialistExecutionStatus.SUCCEEDED
+        ):
             raise ValueError("rejected outcomes require successful specialist execution.")
         if self.qa_run is None or self.qa_run.result.verdict is not QAVerdict.REJECT:
             raise ValueError("rejected outcomes require a rejecting QA run.")
@@ -347,6 +398,8 @@ class EditRunReport(AgentOrchestraModel):
             or self.reviewed_diff
             or self.final_diff
             or self.promotion_result
+            or self.lighthouse_seo
+            or self.seo_diagnostic_report
         ):
             raise ValueError("non-execution outcomes must not include execution artifacts.")
         if self.working_updated:
@@ -361,3 +414,53 @@ class EditRunReport(AgentOrchestraModel):
             raise ValueError("blocked outcomes must leave working unchanged.")
         if not self.staging_cleaned and not self.cleanup_warnings:
             raise ValueError("unclean blocked outcomes must include a cleanup warning.")
+
+    def _validate_diagnostic_completed(self) -> None:
+        if self.manager_result is None or self.plan is None or not self.run_id:
+            raise ValueError("completed diagnostics require manager result, plan, and run ID.")
+        if (
+            self.specialist_report is None
+            or self.specialist_report.status is not SpecialistExecutionStatus.SUCCEEDED
+        ):
+            raise ValueError("completed diagnostics require successful specialist execution.")
+        if self.specialist_report.seo_mode is not SEOExecutionMode.DIAGNOSTIC:
+            raise ValueError("completed diagnostics require SEO diagnostic execution mode.")
+        if self.reviewed_diff is None or not self.reviewed_diff.is_empty:
+            raise ValueError("completed diagnostics require an empty reviewed diff.")
+        if self.seo_diagnostic_report is None or not self.seo_diagnostic_report.source_unchanged:
+            raise ValueError("completed diagnostics require immutable-source diagnostic evidence.")
+        if self.qa_run is not None or self.promotion_result is not None or self.working_updated:
+            raise ValueError("completed diagnostics must not run edit QA or promotion.")
+        if not self.staging_cleaned and not self.cleanup_warnings:
+            raise ValueError("unclean diagnostics must include a cleanup warning.")
+
+    def _validate_lighthouse_selection(self) -> None:
+        seo_selected = bool(
+            self.plan is not None and SpecialistName.SEO in self.plan.selected_specialists
+        )
+        if not seo_selected:
+            if self.lighthouse_seo is not None or self.seo_diagnostic_report is not None:
+                raise ValueError("SEO evidence is forbidden when SEO was not selected.")
+            return
+        if self.status in {
+            EditOutcomeStatus.ACCEPTED,
+            EditOutcomeStatus.REJECTED,
+            EditOutcomeStatus.DIAGNOSTIC_COMPLETED,
+        }:
+            if (
+                self.lighthouse_seo is None
+                or self.lighthouse_seo.status is not LighthouseRunStatus.SUCCEEDED
+            ):
+                raise ValueError("completed SEO outcomes require successful Lighthouse evidence.")
+            if (
+                self.lighthouse_seo.run_id != self.run_id
+                or self.lighthouse_seo.target_page != self.request.target_page
+            ):
+                raise ValueError("Lighthouse evidence must match the Flow run and target page.")
+        if self.seo_diagnostic_report is not None:
+            if self.status is not EditOutcomeStatus.DIAGNOSTIC_COMPLETED:
+                raise ValueError("SEO diagnostic reports are valid only for completed diagnostics.")
+            if self.lighthouse_seo is None:
+                raise ValueError("SEO diagnostic reports require Lighthouse evidence.")
+            if self.seo_diagnostic_report.lighthouse != self.lighthouse_seo:
+                raise ValueError("SEO diagnostic Lighthouse evidence must match the run report.")

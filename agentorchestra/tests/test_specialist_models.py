@@ -6,6 +6,7 @@ from agentorchestra.specialist_models import (
     SpecialistExecutionReport,
     SpecialistRunResult,
 )
+from agentorchestra.workspace_models import DiffReport, FileDiff
 from tests.specialist_helpers import (
     applied_patch,
     empty_diff,
@@ -14,6 +15,27 @@ from tests.specialist_helpers import (
     request,
     run_result,
 )
+
+
+def edit_diff(*files: str) -> DiffReport:
+    file_diffs = [
+        FileDiff(
+            file=file,
+            unified_diff=f"--- working/{file}\n+++ staging/{file}\n-old\n+new\n",
+            added_lines=1,
+            removed_lines=1,
+        )
+        for file in sorted(files)
+    ]
+    return DiffReport(
+        run_id="test-run",
+        changed_files=sorted(files),
+        files=file_diffs,
+        combined_diff="".join(item.unified_diff for item in file_diffs),
+        is_empty=False,
+        total_added_lines=len(files),
+        total_removed_lines=len(files),
+    )
 
 
 def test_valid_completed_and_blocked_completions():
@@ -99,7 +121,7 @@ def test_run_and_report_json_round_trip():
         plan=plan,
         status="succeeded",
         results=[result],
-        diff_report=empty_diff(),
+        diff_report=edit_diff("style.css"),
         total_latency_ms=10.0,
         stopped_early=False,
     )
@@ -119,7 +141,7 @@ def test_execution_report_preserves_plan_order_and_status_invariants():
         plan=plan,
         status="succeeded",
         results=[html, css],
-        diff_report=empty_diff(),
+        diff_report=edit_diff("index.html", "style.css"),
         total_latency_ms=20.0,
         stopped_early=False,
     )

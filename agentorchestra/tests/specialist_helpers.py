@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from agentorchestra.models import (
+    SEO_EDIT_REQUEST_TYPE,
     EditRequest,
     ManagerRoutingPlan,
     SpecialistAssignment,
     SpecialistName,
     TokenUsage,
 )
+from agentorchestra.seo_models import SEOCompletion, SEOExecutionMode
 from agentorchestra.specialist_models import (
     SpecialistCompletion,
     SpecialistRunResult,
@@ -59,7 +61,9 @@ def execute_plan(*specialists: SpecialistName | str) -> ManagerRoutingPlan:
     selected = [SpecialistName(item) for item in specialists] or [SpecialistName.CSS]
     return ManagerRoutingPlan(
         status="execute",
-        request_type="specialist_test",
+        request_type=(
+            SEO_EDIT_REQUEST_TYPE if SpecialistName.SEO in selected else "specialist_test"
+        ),
         selected_specialists=selected,
         routing_rationale="Each task follows specialist ownership.",
         assignments=[
@@ -85,17 +89,41 @@ def run_result(
         patches = (
             [applied_patch("index.html", "html")]
             if specialist is SpecialistName.HTML and status is SpecialistRunStatus.SUCCEEDED
+            else [applied_patch("index.html", "seo")]
+            if specialist is SpecialistName.SEO and status is SpecialistRunStatus.SUCCEEDED
             else [applied_patch()]
             if status is SpecialistRunStatus.SUCCEEDED
             else []
         )
-    completion = SpecialistCompletion(
-        status="completed" if status is SpecialistRunStatus.SUCCEEDED else "blocked",
-        summary="Specialist completed safely." if status is SpecialistRunStatus.SUCCEEDED else "Specialist was blocked.",
-        remaining_issue=None if status is SpecialistRunStatus.SUCCEEDED else "No safe patch was available.",
+    completion = (
+        SEOCompletion(
+            mode=SEOExecutionMode.EDIT,
+            status="completed" if status is SpecialistRunStatus.SUCCEEDED else "blocked",
+            summary=(
+                "Specialist completed safely."
+                if status is SpecialistRunStatus.SUCCEEDED
+                else "Specialist was blocked."
+            ),
+            remaining_issue=(
+                None if status is SpecialistRunStatus.SUCCEEDED else "No safe patch was available."
+            ),
+        )
+        if specialist is SpecialistName.SEO
+        else SpecialistCompletion(
+            status="completed" if status is SpecialistRunStatus.SUCCEEDED else "blocked",
+            summary=(
+                "Specialist completed safely."
+                if status is SpecialistRunStatus.SUCCEEDED
+                else "Specialist was blocked."
+            ),
+            remaining_issue=(
+                None if status is SpecialistRunStatus.SUCCEEDED else "No safe patch was available."
+            ),
+        )
     )
     return SpecialistRunResult(
         specialist=specialist,
+        mode=SEOExecutionMode.EDIT,
         assignment=assignment or f"Perform {specialist.value} edit.",
         status=status,
         completion=completion,

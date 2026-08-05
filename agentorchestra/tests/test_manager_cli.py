@@ -30,7 +30,7 @@ def plan_payload(status="execute", specialists=None):
         }
     return {
         "status": status,
-        "request_type": "route",
+        "request_type": "seo_edit" if "seo" in specialists else "route",
         "selected_specialists": specialists,
         "routing_rationale": "Routed by ownership.",
         "assignments": [
@@ -78,16 +78,22 @@ def test_manager_cli_parses_args_and_prints_valid_output(capsys):
 
 
 def test_manager_cli_prints_clarification_and_out_of_scope(capsys):
-    assert run_manager.main(
-        ["--target-page", "index.html", "--instruction", "Make it better"],
-        router=FakeRouter(plan_payload(status="clarification_required")),
-    ) == 0
+    assert (
+        run_manager.main(
+            ["--target-page", "index.html", "--instruction", "Make it better"],
+            router=FakeRouter(plan_payload(status="clarification_required")),
+        )
+        == 0
+    )
     assert "clarification question:" in capsys.readouterr().out
 
-    assert run_manager.main(
-        ["--target-page", "index.html", "--instruction", "Add backend validation"],
-        router=FakeRouter(plan_payload(status="out_of_scope")),
-    ) == 0
+    assert (
+        run_manager.main(
+            ["--target-page", "index.html", "--instruction", "Add backend validation"],
+            router=FakeRouter(plan_payload(status="out_of_scope")),
+        )
+        == 0
+    )
     assert "rejection reason:" in capsys.readouterr().out
 
 
@@ -150,6 +156,8 @@ def test_benchmark_cli_success_and_failure_exit_codes(tmp_path, capsys):
             )
 
     good_path = tmp_path / "good.json"
-    assert run_routing_benchmark.main(["--report-path", str(good_path)], router=EightCaseRouter()) == 0
+    assert (
+        run_routing_benchmark.main(["--report-path", str(good_path)], router=EightCaseRouter()) == 0
+    )
     assert "correct routes: 8/8" in capsys.readouterr().out
     assert good_path.exists()

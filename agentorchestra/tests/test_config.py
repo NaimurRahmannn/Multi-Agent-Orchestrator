@@ -1,4 +1,3 @@
-
 import pytest
 from pydantic import SecretStr
 
@@ -17,10 +16,12 @@ def test_settings_load_without_groq_key(monkeypatch, tmp_path):
     monkeypatch.delenv("GROQ_MANAGER_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_HTML_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_CSS_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_SEO_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_QA_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_MANAGER_MODEL", raising=False)
     monkeypatch.delenv("GROQ_HTML_MODEL", raising=False)
     monkeypatch.delenv("GROQ_CSS_MODEL", raising=False)
+    monkeypatch.delenv("GROQ_SEO_MODEL", raising=False)
     monkeypatch.delenv("GROQ_QA_MODEL", raising=False)
     get_settings.cache_clear()
 
@@ -29,10 +30,12 @@ def test_settings_load_without_groq_key(monkeypatch, tmp_path):
     assert settings.groq_manager_api_key is None
     assert settings.groq_html_api_key is None
     assert settings.groq_css_api_key is None
+    assert settings.groq_seo_api_key is None
     assert settings.groq_qa_api_key is None
     assert settings.groq_manager_model is None
     assert settings.groq_html_model is None
     assert settings.groq_css_model is None
+    assert settings.groq_seo_model is None
     assert settings.groq_qa_model is None
     assert settings.app_env == "development"
 
@@ -70,10 +73,12 @@ def test_environment_overrides_work(monkeypatch, tmp_path):
     monkeypatch.setenv("GROQ_MANAGER_API_KEY", "manager-secret")
     monkeypatch.setenv("GROQ_HTML_API_KEY", "html-secret")
     monkeypatch.setenv("GROQ_CSS_API_KEY", "css-secret")
+    monkeypatch.setenv("GROQ_SEO_API_KEY", "seo-secret")
     monkeypatch.setenv("GROQ_QA_API_KEY", "qa-secret")
     monkeypatch.setenv("GROQ_MANAGER_MODEL", "manager-model")
     monkeypatch.setenv("GROQ_HTML_MODEL", "html-model")
     monkeypatch.setenv("GROQ_CSS_MODEL", "css-model")
+    monkeypatch.setenv("GROQ_SEO_MODEL", "seo-model")
     monkeypatch.setenv("GROQ_QA_MODEL", "qa-model")
     monkeypatch.setenv("APP_ENV", "test")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
@@ -83,23 +88,28 @@ def test_environment_overrides_work(monkeypatch, tmp_path):
     manager_groq = settings.require_groq_configuration(GroqAgentName.MANAGER)
     html_groq = settings.require_groq_configuration(GroqAgentName.HTML)
     css_groq = settings.require_groq_configuration(GroqAgentName.CSS)
+    seo_groq = settings.require_groq_configuration(GroqAgentName.SEO)
     qa_groq = settings.require_groq_configuration(GroqAgentName.QA)
 
     assert settings.groq_manager_api_key == SecretStr("manager-secret")
     assert settings.groq_html_api_key == SecretStr("html-secret")
     assert settings.groq_css_api_key == SecretStr("css-secret")
+    assert settings.groq_seo_api_key == SecretStr("seo-secret")
     assert settings.groq_qa_api_key == SecretStr("qa-secret")
     assert manager_groq.api_key == "manager-secret"
     assert html_groq.api_key == "html-secret"
     assert css_groq.api_key == "css-secret"
+    assert seo_groq.api_key == "seo-secret"
     assert qa_groq.api_key == "qa-secret"
     assert manager_groq.model == "manager-model"
     assert html_groq.model == "html-model"
     assert css_groq.model == "css-model"
+    assert seo_groq.model == "seo-model"
     assert qa_groq.model == "qa-model"
     assert settings.groq_model_for(GroqAgentName.MANAGER) == "manager-model"
     assert settings.groq_model_for(GroqAgentName.HTML) == "html-model"
     assert settings.groq_model_for(GroqAgentName.CSS) == "css-model"
+    assert settings.groq_model_for(GroqAgentName.SEO) == "seo-model"
     assert settings.groq_model_for(GroqAgentName.QA) == "qa-model"
     assert settings.app_env == "test"
     assert settings.log_level == "DEBUG"
@@ -173,6 +183,7 @@ def test_secret_values_are_not_leaked(monkeypatch, tmp_path):
     monkeypatch.setenv("GROQ_MANAGER_API_KEY", "manager-super-secret-key")
     monkeypatch.setenv("GROQ_HTML_API_KEY", "html-super-secret-key")
     monkeypatch.setenv("GROQ_CSS_API_KEY", "css-super-secret-key")
+    monkeypatch.setenv("GROQ_SEO_API_KEY", "seo-super-secret-key")
     monkeypatch.setenv("GROQ_QA_API_KEY", "qa-super-secret-key")
     monkeypatch.delenv("GROQ_CSS_MODEL", raising=False)
 
@@ -181,6 +192,7 @@ def test_secret_values_are_not_leaked(monkeypatch, tmp_path):
     assert "manager-super-secret-key" not in repr(settings)
     assert "html-super-secret-key" not in repr(settings)
     assert "css-super-secret-key" not in repr(settings)
+    assert "seo-super-secret-key" not in repr(settings)
     assert "qa-super-secret-key" not in repr(settings)
     assert "manager-super-secret-key" not in str(settings.model_dump(mode="json"))
     assert "qa-super-secret-key" not in str(settings.model_dump(mode="json"))
@@ -245,3 +257,26 @@ def test_legacy_shared_key_does_not_replace_qa_key(monkeypatch, tmp_path):
     assert "GROQ_QA_API_KEY" in str(error.value)
     assert "GROQ_QA_MODEL" in str(error.value)
     assert "legacy-shared-secret" not in str(error.value)
+
+
+def test_seo_groq_configuration_is_isolated_and_never_falls_back(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GROQ_MANAGER_API_KEY", "manager-secret")
+    monkeypatch.setenv("GROQ_MANAGER_MODEL", "manager-model")
+    monkeypatch.setenv("GROQ_SEO_API_KEY", "seo-secret")
+    monkeypatch.setenv("GROQ_SEO_MODEL", "seo-model")
+
+    settings = Settings()
+    seo = settings.require_groq_configuration(GroqAgentName.SEO)
+
+    assert seo.api_key == "seo-secret"
+    assert seo.model == "seo-model"
+    assert "seo-secret" in settings.groq_api_key_values
+
+    monkeypatch.delenv("GROQ_SEO_API_KEY")
+    monkeypatch.delenv("GROQ_SEO_MODEL")
+    with pytest.raises(ConfigurationError) as error:
+        Settings().require_groq_configuration(GroqAgentName.SEO)
+    assert "GROQ_SEO_API_KEY" in str(error.value)
+    assert "GROQ_SEO_MODEL" in str(error.value)
+    assert "manager-secret" not in str(error.value)

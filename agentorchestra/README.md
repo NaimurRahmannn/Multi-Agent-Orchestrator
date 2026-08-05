@@ -4,9 +4,9 @@ AgentOrchestra is an incremental CrewAI evaluation project for routing natural-l
 
 The central architecture rule is: **Manager decides what should run. Flow decides what actually runs.**
 
-## Foundation Status
+## Implementation Status
 
-The foundation work implements project setup and feasibility only:
+The project includes its original feasibility checks plus the production lifecycle:
 
 - Typed environment configuration for Groq-backed operations.
 - Strict Pydantic routing models for Manager output.
@@ -14,7 +14,7 @@ The foundation work implements project setup and feasibility only:
 - Manual feasibility checks for CrewAI imports, Groq connectivity, structured Manager output, Lighthouse SEO-only execution, and Playwright Chromium screenshots.
 - Deterministic tests that do not call Groq, Lighthouse, or browser automation.
 
-Production Manager routing, staged workspace tooling, HTML/CSS specialist previews, QA-controlled promotion, and reset are implemented incrementally. SEO execution, Lighthouse production integration, screenshots, and Streamlit UI are not implemented yet.
+Production Manager routing, staged workspace tooling, HTML/CSS/SEO specialist execution, SEO diagnostics, SEO-only Lighthouse evidence, QA-controlled promotion, and reset are implemented. Screenshots, Streamlit, accessibility/content agents, JavaScript editing, arbitrary sites, and non-SEO Lighthouse categories are not implemented.
 
 ## Domain Contracts Status
 
@@ -29,7 +29,7 @@ The domain-contract work adds the production configuration and strict models fut
 
 Supported routing statuses are `execute`, `clarification_required`, and `out_of_scope`. Supported specialist names are `html`, `css`, and `seo`; QA is intentionally not a selectable specialist.
 
-These models are contracts only. Production QA and Flow orchestration are documented below. Production Lighthouse services, production Playwright services, and the Streamlit UI are still future work.
+Production QA, Flow orchestration, SEO contracts, and normalized Lighthouse evidence are documented below. Screenshot services and the Streamlit UI remain future work.
 
 ## Manager Routing Status
 
@@ -110,7 +110,7 @@ This report path is ignored by Git.
 
 Automated tests use fakes and make no live LLM calls. Live Manager and benchmark commands require `.env` values for `GROQ_MANAGER_API_KEY` and `GROQ_MANAGER_MODEL`, require network access, and consume Groq tokens.
 
-HTML/CSS specialist execution and QA-controlled promotion are documented below. SEO execution, Lighthouse production integration, Playwright production integration, and Streamlit UI remain unimplemented.
+HTML/CSS/SEO specialist execution and QA-controlled promotion are documented below.
 
 ## Workspace Tooling Status
 
@@ -127,19 +127,20 @@ The workspace tooling work adds the deterministic staged-workspace and patch too
 - `generate_diff()` produces deterministic per-file and combined unified diffs with added/removed line totals and a bounded output size.
 - `scripts/demo_workspace.py` demonstrates staging, reading, patching, diff generation, and cleanup without any Groq call.
 
-The workspace tooling remains deterministic infrastructure. HTML/CSS agents consume it only through tools bound by trusted application code; QA acceptance and promotion are controlled by the Flow. Browser automation, Lighthouse production execution, and UI work are not implemented here.
+The workspace tooling remains deterministic infrastructure. Specialists consume it only through tools bound by trusted application code; QA acceptance and promotion are controlled by the Flow.
 
-## HTML/CSS Specialist Status
+## HTML/CSS/SEO Specialist Status
 
-This stage adds two production CrewAI specialists and a temporary headless execution preview:
+The production specialists are:
 
 - The HTML specialist owns narrow structural markup, elements, attributes, explicit alt text, labels, semantic markup, and broken heading structure. It may read and patch only the selected target HTML page.
 - The CSS specialist owns colors, typography, visual heading size, spacing, borders, layout CSS, and narrow responsive presentation. It may read the selected target page and `style.css`, but may patch only `style.css`.
+- The SEO specialist owns page titles, meta descriptions, requested basic Open Graph metadata, SEO-focused heading hierarchy, and source-based SEO diagnosis. It may access only the selected HTML page.
 - Each agent has `allow_delegation=False`, no memory or planning, bounded iterations and retries, and exactly the bound `read_file` and `propose_patch` tools.
 - The workspace, specialist identity, and approved assignment files are hidden trusted fields and cannot be supplied or overridden by the model.
 - One `PatchEvidenceRecorder` is created per specialist invocation. It records actual applied and rejected `PatchExecutionResult` values in tool-call order; a model completion summary is never treated as proof of a write.
 - `SpecialistCompletion` strictly validates the concise `completed` or `blocked` statement. Runtime `succeeded`, `blocked`, and `failed` statuses are derived locally from completion validity and actual patch evidence.
-- `SpecialistExecutionService` validates an HTML/CSS-only Manager plan, runs selected specialists sequentially in plan order, stops on blocked or failed work, and generates one authoritative combined staged diff.
+- `SpecialistExecutionService` validates HTML/CSS/SEO Manager plans, runs selected specialists sequentially in plan order, stops on blocked or failed work, and generates one authoritative combined staged diff.
 
 Run one explicitly selected specialist:
 
@@ -149,6 +150,15 @@ python scripts/run_specialist.py \
   --target-page index.html \
   --task "Change the primary button background to dark blue"
 ```
+
+Run SEO edit or read-only diagnostic mode explicitly:
+
+```bash
+python scripts/run_specialist.py --specialist seo --mode edit --target-page index.html --task "Improve the page title"
+python scripts/run_specialist.py --specialist seo --mode diagnostic --target-page index.html --task "Diagnose source SEO"
+```
+
+HTML and CSS reject `--mode diagnostic`. Single-specialist diagnostic mode returns source findings but does not run Lighthouse; use the full Flow for the combined diagnostic report.
 
 Run the temporary routed HTML/CSS preview:
 
@@ -162,7 +172,21 @@ The routed command uses the Manager's key/model pair for routing and each select
 
 Live Manager and specialist LLM calls use a small provider retry budget for transient Groq rate limits. Short `retry after` TPM windows may pause and retry the same provider request up to two times. CrewAI agent and task retries remain disabled, so failed patch workflows are not replayed as a separate agent run.
 
-These preview commands do not run QA, promote staging, or modify working. SEO execution is rejected before staging. Use the QA-controlled edit Flow below for accepted working-site updates. Lighthouse production execution, screenshots, and Streamlit remain later work.
+These preview commands do not run QA, Lighthouse, promote staging, or modify working. Use the QA-controlled Flow below for accepted updates or a complete SEO diagnostic.
+
+## SEO and Lighthouse Status
+
+SEO edit mode has the same exact-patch evidence requirement as HTML/CSS edits. SEO diagnostic mode receives only `read_file`, must return non-empty structured source findings, must produce no patch evidence, and must leave the staged diff empty.
+
+After selected specialists succeed, the Flow runs Lighthouse only when SEO was selected. The service validates the staged site, serves it on `127.0.0.1` with an ephemeral port, invokes the project-local Lighthouse package with `shell=False`, headless Chrome, a timeout, and only `--only-categories=seo`, then always stops the server. Raw JSON is stored under `reports/lighthouse/`; pipeline reports contain only normalized SEO score, audit items, failed audit IDs, safe errors, and latency.
+
+Audit the protected working copy directly without Groq or mutation:
+
+```bash
+python scripts/run_lighthouse_seo.py --target-page index.html --apply
+```
+
+`--apply` is required before this command launches Lighthouse. It never edits `sites/working` or `sites/fixture`.
 
 ## QA-Controlled Edit Flow Status
 
@@ -172,17 +196,19 @@ authoritative entry point; `run()` remains only as a compatibility wrapper that 
 ```text
 EditRequest
   -> @start Manager routing
-  -> Manager router: clarify / out of scope / unsupported / executable
+  -> Manager router: clarify / out of scope / executable
   -> fresh staging transition
-  -> selected HTML/CSS specialists in Manager order
+  -> selected HTML/CSS/SEO specialists in Manager order
   -> specialist-result router
+  -> SEO-only Lighthouse when SEO is selected
+  -> SEO diagnostic returns findings + audit without QA or promotion
   -> deterministic evidence and content-digest validation
   -> tool-free QA Agent
   -> QA verdict router
   -> QA accept promotes; every other staged outcome discards
 ```
 
-QA receives a deterministic evidence bundle containing the original request, Manager-selected specialists and assignments, exact acceptance criteria, actual applied/rejected patch metadata, changed files, and the final staged diff. QA has no tools and cannot edit files, invoke agents, promote staging, or discard staging. Each Manager acceptance criterion must be returned exactly once; QA accepts only when every criterion passes and rejects insufficient evidence.
+QA receives a deterministic evidence bundle containing the original request, Manager-selected specialists and assignments, exact acceptance criteria, actual applied/rejected patch metadata, changed files, the final staged diff, and matching normalized Lighthouse evidence for SEO edits. Raw Lighthouse JSON is unavailable to QA. SEO scores cannot prove unrelated HTML/CSS criteria or search-ranking improvement. QA has no tools and cannot edit files, invoke agents, promote staging, or discard staging. Each Manager acceptance criterion must be returned exactly once; QA accepts only when every criterion passes and rejects insufficient evidence.
 
 Before QA runs, the Flow validates that the specialist report succeeded, selected specialists match execution order, at least one patch was applied, changed files exactly match applied patch files, ownership boundaries are respected, the diff is non-empty, and no asset or absolute path appears in structured user-facing evidence. Normal HTML closing tags, CSS URLs, and web URLs in unified diff content are not treated as filesystem paths.
 
@@ -197,6 +223,15 @@ python scripts/run_edit_flow.py \
   --apply
 ```
 
+SEO edit and diagnostic examples:
+
+```bash
+python scripts/run_edit_flow.py --target-page index.html --instruction "Improve the page title and meta description" --apply
+python scripts/run_edit_flow.py --target-page index.html --instruction "Diagnose this page's source SEO without editing it" --apply
+```
+
+For `request_type=seo_diagnostic`, the Manager must select only SEO. The Flow confirms an empty diff, runs Lighthouse SEO, returns `diagnostic_completed`, skips QA and promotion, cleans staging, and leaves working and fixture unchanged.
+
 Without `--apply`, the command exits before any Groq call or mutation:
 
 ```bash
@@ -210,6 +245,7 @@ Outcome exit codes:
 | Outcome | Exit code |
 |---|---:|
 | accepted | 0 |
+| diagnostic_completed | 0 |
 | failed | 1 |
 | missing `--apply` / usage guard | 2 |
 | rejected | 4 |
@@ -231,7 +267,7 @@ python scripts/reset_demo_site.py --reset
 
 The reset command uses the same candidate, digest, commit, verified rollback, and post-commit warning semantics. It does not remove unrelated staging runs. Reset cleanup warnings remain successful resets; a rollback failure returns the same critical exit code 9.
 
-QA judges source evidence only. Browser screenshot evidence, Lighthouse evidence, SEO execution, and Streamlit are not implemented yet.
+Screenshots, Streamlit, accessibility/content agents, JavaScript editing, arbitrary sites, and Performance/Accessibility/Best Practices/PWA Lighthouse categories remain excluded.
 
 ## Prerequisites
 
@@ -254,9 +290,11 @@ Fill in `.env` only when running live Groq checks:
 GROQ_MANAGER_API_KEY=
 GROQ_HTML_API_KEY=
 GROQ_CSS_API_KEY=
+GROQ_SEO_API_KEY=
 GROQ_MANAGER_MODEL=llama-3.3-70b-versatile
 GROQ_HTML_MODEL=llama-3.3-70b-versatile
 GROQ_CSS_MODEL=openai/gpt-oss-20b
+GROQ_SEO_MODEL=llama-3.3-70b-versatile
 GROQ_QA_API_KEY=
 GROQ_QA_MODEL=llama-3.3-70b-versatile
 APP_ENV=development
@@ -266,7 +304,7 @@ AGENTORCHESTRA_ROOT=
 
 Configuration is loaded with `pydantic-settings`. `AGENTORCHESTRA_ROOT` is optional and is mainly useful for tests or unusual local layouts; derived site and report paths remain under that root. Runtime-directory creation is explicit and limited to staging and report directories.
 
-Each Groq key/model pair is bound to only its named agent: Manager, HTML, CSS, and QA. To distribute provider quotas, use keys from the separate Groq organizations authorized for those agents; keys from one organization still share that organization's limits. Model IDs may differ by agent, but each must be available to its corresponding organization. Never commit the populated `.env` file.
+Each Groq key/model pair is bound to only its named agent: Manager, HTML, CSS, SEO, and QA. There is no silent credential fallback. To distribute provider quotas, use keys from the separate Groq organizations authorized for those agents; keys from one organization still share that organization's limits. Model IDs may differ by agent, but each must be available to its corresponding organization. Never commit the populated `.env` file.
 
 Install Python dependencies with the project toolchain:
 
@@ -314,7 +352,7 @@ Expected generated outputs:
 
 - `reports/routing/manager_trials.json`
 - `reports/routing/manager_routing_benchmark.json`
-- `reports/lighthouse/seo.json`
+- `reports/lighthouse/seo-<run-id>-<report-id>.json`
 - `reports/screenshots/index.png`
 
 ## Tests And Linting
@@ -349,6 +387,7 @@ pytest tests/test_specialist_models.py -q
 pytest tests/test_specialist_tools_evidence.py -q
 pytest tests/test_specialist_prompts.py -q
 pytest tests/test_html_agent.py tests/test_css_agent.py -q
+pytest tests/test_seo_agent.py tests/test_seo_models.py -q
 pytest tests/test_specialist_runner.py -q
 pytest tests/test_specialist_execution.py -q
 pytest tests/test_specialist_cli.py tests/test_edit_preview_cli.py -q
@@ -357,6 +396,8 @@ pytest tests/test_qa_output.py tests/test_qa_runner.py tests/test_qa_evidence.py
 pytest tests/test_promotion_service.py tests/test_edit_flow.py -q
 pytest tests/test_edit_flow_cli.py tests/test_reset_demo_site.py -q
 pytest tests/test_flow_transitions.py tests/test_site_digest.py tests/test_path_safety.py -q
+pytest tests/test_preview_server_service.py tests/test_lighthouse.py tests/test_lighthouse_cli.py -q
+pytest tests/test_seo_flow.py -q
 ```
 
 ## Sample Site

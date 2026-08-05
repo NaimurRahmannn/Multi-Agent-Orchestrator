@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from pydantic import BaseModel
+
 from agentorchestra.agents.manager import crewai_model_name, localize_crewai_paths
 from agentorchestra.config import GroqConfiguration
 from agentorchestra.models import EditRequest
@@ -54,7 +56,13 @@ def build_specialist_agent(
     )
 
 
-def build_specialist_task(*, agent: Any, description: str, expected_output: str) -> Any:
+def build_specialist_task(
+    *,
+    agent: Any,
+    description: str,
+    expected_output: str,
+    output_model: type[BaseModel] = SpecialistCompletion,
+) -> Any:
     localize_crewai_paths()
     from crewai import Task
 
@@ -63,7 +71,7 @@ def build_specialist_task(*, agent: Any, description: str, expected_output: str)
         expected_output=expected_output,
         agent=agent,
         tools=list(agent.tools),
-        output_pydantic=SpecialistCompletion,
+        output_pydantic=output_model,
         async_execution=False,
         human_input=False,
         markdown=False,
@@ -89,4 +97,6 @@ def build_specialist_crew(agent: Any, task: Any) -> Any:
 
 def validate_target_page(target_page: str) -> str:
     """Apply the existing EditRequest filename contract to trusted agent setup."""
-    return EditRequest(target_page=target_page, instruction="Validate specialist target page.").target_page
+    return EditRequest(
+        target_page=target_page, instruction="Validate specialist target page."
+    ).target_page

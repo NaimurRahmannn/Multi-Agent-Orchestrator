@@ -3,6 +3,7 @@ import pytest
 from agentorchestra.agents.qa_agent import build_qa_agent, build_qa_task
 from agentorchestra.config import GroqConfiguration, Settings
 from agentorchestra.exceptions import ConfigurationError
+from agentorchestra.prompts.qa import QA_SYSTEM_PROMPT
 from tests.test_qa_evidence import report
 
 
@@ -43,6 +44,9 @@ def test_qa_task_requests_strict_qa_result():
     assert task.guardrail_max_retries == 0
     assert "Preserve Manager criterion wording exactly" in task.description
     assert "qa-secret" not in task.description
+    assert "normalized Lighthouse SEO evidence" in QA_SYSTEM_PROMPT
+    assert "not proof of unrelated HTML/CSS criteria" in QA_SYSTEM_PROMPT
+    assert "Do not claim search ranking improvement" in QA_SYSTEM_PROMPT
 
 
 def test_qa_agent_missing_configuration_is_focused_and_redacted(monkeypatch, tmp_path):

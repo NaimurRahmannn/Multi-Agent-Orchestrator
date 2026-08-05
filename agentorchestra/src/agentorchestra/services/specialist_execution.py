@@ -11,12 +11,14 @@ from agentorchestra.exceptions import (
     UnsupportedSpecialistError,
 )
 from agentorchestra.models import (
+    SEO_DIAGNOSTIC_REQUEST_TYPE,
     EditRequest,
     ManagerRoutingPlan,
     RoutingStatus,
     SpecialistAssignment,
     SpecialistName,
 )
+from agentorchestra.seo_models import SEOExecutionMode
 from agentorchestra.services.specialist_runner import SpecialistRunner
 from agentorchestra.services.workspace import generate_diff, read_file, validate_staged_site
 from agentorchestra.specialist_models import (
@@ -35,6 +37,7 @@ class SpecialistRunnerInterface(Protocol):
         assignment: SpecialistAssignment,
         acceptance_criteria: list[str],
         workspace: WorkspaceHandle,
+        mode: SEOExecutionMode = SEOExecutionMode.EDIT,
     ) -> SpecialistRunResult:
         """Execute one selected specialist."""
 
@@ -59,14 +62,30 @@ class SpecialistExecutionService:
     ) -> SpecialistExecutionReport:
         validated_request, validated_plan = self._validate_inputs(request, plan, workspace)
         results: list[SpecialistRunResult] = []
+        seo_mode = None
+        if SpecialistName.SEO in validated_plan.selected_specialists:
+            seo_mode = (
+                SEOExecutionMode.DIAGNOSTIC
+                if validated_plan.request_type == SEO_DIAGNOSTIC_REQUEST_TYPE
+                else SEOExecutionMode.EDIT
+            )
 
         for assignment in validated_plan.assignments:
-            result = self._runner.run_specialist(
-                validated_request,
-                assignment,
-                validated_plan.acceptance_criteria,
-                workspace,
-            )
+            if assignment.agent is SpecialistName.SEO:
+                result = self._runner.run_specialist(
+                    validated_request,
+                    assignment,
+                    validated_plan.acceptance_criteria,
+                    workspace,
+                    mode=seo_mode or SEOExecutionMode.EDIT,
+                )
+            else:
+                result = self._runner.run_specialist(
+                    validated_request,
+                    assignment,
+                    validated_plan.acceptance_criteria,
+                    workspace,
+                )
             if result.specialist is not assignment.agent or result.assignment != assignment.task:
                 raise SpecialistExecutionError(
                     "Specialist runner returned evidence for a different assignment."
@@ -81,6 +100,16 @@ class SpecialistExecutionService:
         except Exception as exc:
             raise SpecialistExecutionError("Final staged diff generation failed safely.") from exc
 
+        if results and seo_mode is SEOExecutionMode.DIAGNOSTIC and not diff_report.is_empty:
+            raise SpecialistExecutionError("SEO diagnostic execution modified staged source.")
+        elif (
+            results
+            and seo_mode is not SEOExecutionMode.DIAGNOSTIC
+            and all(result.status is SpecialistRunStatus.SUCCEEDED for result in results)
+            and diff_report.is_empty
+        ):
+            raise SpecialistExecutionError("Successful edit execution produced no staged diff.")
+
         stopped_early = len(results) < len(validated_plan.selected_specialists)
         return SpecialistExecutionReport(
             run_id=workspace.run_id,
@@ -91,6 +120,7 @@ class SpecialistExecutionService:
             diff_report=diff_report,
             total_latency_ms=float(sum(result.latency_ms for result in results)),
             stopped_early=stopped_early,
+            seo_mode=seo_mode,
         )
 
     def _validate_inputs(
@@ -108,13 +138,11 @@ class SpecialistExecutionService:
             raise SpecialistPlanError(
                 f"Manager plan status {validated_plan.status.value} is not executable."
             )
-        if SpecialistName.SEO in validated_plan.selected_specialists:
-            raise UnsupportedSpecialistError("SEO execution is not implemented in this stage.")
         if any(
-            specialist not in {SpecialistName.HTML, SpecialistName.CSS}
+            specialist not in {SpecialistName.HTML, SpecialistName.CSS, SpecialistName.SEO}
             for specialist in validated_plan.selected_specialists
         ):
-            raise UnsupportedSpecialistError("Only HTML and CSS specialists are executable.")
+            raise UnsupportedSpecialistError("Manager plan contains an unsupported specialist.")
         try:
             validate_staged_site(workspace)
             read_file(

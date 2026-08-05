@@ -26,6 +26,8 @@ MAX_PATCH_TEXT_LENGTH = 5_000
 MAX_SUMMARY_LENGTH = 300
 MAX_EVIDENCE_LENGTH = 1_000
 MAX_REASON_LENGTH = 1_000
+SEO_EDIT_REQUEST_TYPE = "seo_edit"
+SEO_DIAGNOSTIC_REQUEST_TYPE = "seo_diagnostic"
 
 
 class AgentOrchestraModel(BaseModel):
@@ -131,6 +133,19 @@ class ManagerRoutingPlan(AgentOrchestraModel):
             raise ValueError("execute plans must not include a clarification question.")
         if self.rejection_reason:
             raise ValueError("execute plans must not include a rejection reason.")
+        seo_selected = SpecialistName.SEO in self.selected_specialists
+        seo_request = self.request_type in {
+            SEO_EDIT_REQUEST_TYPE,
+            SEO_DIAGNOSTIC_REQUEST_TYPE,
+        }
+        if seo_selected and not seo_request:
+            raise ValueError("SEO plans must use request_type seo_edit or seo_diagnostic.")
+        if seo_request and not seo_selected:
+            raise ValueError("SEO request types must select the SEO specialist.")
+        if self.request_type == SEO_DIAGNOSTIC_REQUEST_TYPE and self.selected_specialists != [
+            SpecialistName.SEO
+        ]:
+            raise ValueError("seo_diagnostic plans must select only the SEO specialist.")
 
     def _validate_clarification_required(self) -> None:
         if self.selected_specialists or self.assignments or self.acceptance_criteria:
@@ -276,7 +291,9 @@ class RoutingEvidenceResult(AgentOrchestraModel):
             if not self.validation_error:
                 raise ValueError("invalid structural results must include validation_error.")
             if self.routing_correct:
-                raise ValueError("routing_correct cannot be true when structural validation failed.")
+                raise ValueError(
+                    "routing_correct cannot be true when structural validation failed."
+                )
         return self
 
 
@@ -303,7 +320,9 @@ class RoutingBenchmarkReport(AgentOrchestraModel):
     routing_accuracy: StrictStr
     results: list[RoutingEvidenceResult] = Field(default_factory=list)
 
-    @field_validator("generated_at", "model", "structural_validity_rate", "routing_accuracy", mode="before")
+    @field_validator(
+        "generated_at", "model", "structural_validity_rate", "routing_accuracy", mode="before"
+    )
     @classmethod
     def strip_report_text(cls, value: object) -> object:
         return _strip_text(value)
@@ -358,9 +377,8 @@ class QAResult(AgentOrchestraModel):
 
 def evaluate_routing_match(case: RoutingEvidenceCase, plan: ManagerRoutingPlan) -> bool:
     """Return whether a Manager plan matches a routing evidence case."""
-    return (
-        case.expected_status == plan.status
-        and set(case.expected_specialists) == set(plan.selected_specialists)
+    return case.expected_status == plan.status and set(case.expected_specialists) == set(
+        plan.selected_specialists
     )
 
 

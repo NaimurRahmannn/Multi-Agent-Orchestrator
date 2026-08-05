@@ -121,9 +121,7 @@ def promote_staged_copy(
         warnings,
         "promotion candidate",
     )
-    status = (
-        PromotionStatus.COMMITTED_WITH_WARNING if warnings else PromotionStatus.COMMITTED
-    )
+    status = PromotionStatus.COMMITTED_WITH_WARNING if warnings else PromotionStatus.COMMITTED
     return PromotionResult(
         run_id=handle.run_id,
         status=status,
@@ -166,9 +164,7 @@ def reset_working_from_fixture(
     pre_working = digest_function(working)
 
     transaction_id = _safe_generated_id(temporary_id_factory())
-    candidate = _temporary_site_path(
-        resolved, f".agentorchestra-reset-candidate-{transaction_id}"
-    )
+    candidate = _temporary_site_path(resolved, f".agentorchestra-reset-candidate-{transaction_id}")
     backup = _temporary_site_path(resolved, f".agentorchestra-reset-backup-{transaction_id}")
     _require_available(candidate)
     _require_available(backup)
@@ -226,9 +222,7 @@ def reset_working_from_fixture(
         warnings,
         "reset candidate",
     )
-    status = (
-        PromotionStatus.COMMITTED_WITH_WARNING if warnings else PromotionStatus.COMMITTED
-    )
+    status = PromotionStatus.COMMITTED_WITH_WARNING if warnings else PromotionStatus.COMMITTED
     return ResetResult(
         status=status,
         working_reset=True,

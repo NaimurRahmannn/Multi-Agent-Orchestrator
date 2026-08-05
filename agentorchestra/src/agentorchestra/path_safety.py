@@ -30,9 +30,7 @@ def validate_relative_site_path(value: str) -> str:
 def contains_absolute_path_text(value: str) -> bool:
     """Detect common absolute filesystem paths without treating ordinary slashes as paths."""
     return bool(
-        _WINDOWS_DRIVE_PATH.search(value)
-        or _UNC_PATH.search(value)
-        or _POSIX_PATH.search(value)
+        _WINDOWS_DRIVE_PATH.search(value) or _UNC_PATH.search(value) or _POSIX_PATH.search(value)
     )
 
 

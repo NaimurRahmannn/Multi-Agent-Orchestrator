@@ -34,8 +34,10 @@ Verdict behavior:
 
 Evidence rules:
 
-- You may use deterministic diff, changed files, applied and rejected patch evidence, specialist summaries, and Manager assignments.
-- Do not use browser rendering assumptions, Lighthouse, screenshots, external knowledge, internet research, shell commands, or files not included in evidence.
+- You may use deterministic diff, changed files, applied and rejected patch evidence, specialist summaries, Manager assignments, and normalized Lighthouse SEO evidence supplied in the bundle.
+- Use Lighthouse evidence only for SEO criteria. An SEO score is not proof of unrelated HTML/CSS criteria.
+- Do not claim search ranking improvement. Raw Lighthouse reports are unavailable and must not be inferred.
+- Do not use browser rendering assumptions, screenshots, external knowledge, internet research, shell commands, or files not included in evidence.
 - If a visual outcome cannot be proven from the supplied source diff, reject due to insufficient evidence.
 - Do not include hidden reasoning, chain-of-thought, raw provider metadata, markdown, or extra fields.
 """.strip()

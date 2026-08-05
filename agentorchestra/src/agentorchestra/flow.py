@@ -33,6 +33,14 @@ from agentorchestra.pipeline_models import (
     QARunResult,
     SiteTreeDigest,
 )
+from agentorchestra.seo_models import (
+    LighthouseRunStatus,
+    LighthouseSEOResult,
+    SEOCompletion,
+    SEODiagnosticReport,
+    SEOExecutionMode,
+)
+from agentorchestra.services.lighthouse import run_lighthouse_seo
 from agentorchestra.services.promotion import promote_staged_copy
 from agentorchestra.services.qa_evidence import (
     build_qa_evidence_bundle,
@@ -64,6 +72,7 @@ EvidenceValidator = Callable[[ManagerRoutingPlan, SpecialistExecutionReport, Dif
 EvidenceBuilder = Callable[..., QAEvidenceBundle]
 PromotionService = Callable[..., PromotionResult]
 DigestFunction = Callable[..., SiteTreeDigest]
+LighthouseRunner = Callable[..., LighthouseSEOResult]
 
 
 @dataclass(frozen=True)
@@ -82,6 +91,7 @@ class AgentOrchestraFlowDependencies:
     evidence_builder: EvidenceBuilder = build_qa_evidence_bundle
     promotion_service: PromotionService = promote_staged_copy
     digest_function: DigestFunction = compute_site_tree_digest
+    lighthouse_runner: LighthouseRunner = run_lighthouse_seo
     clock: Callable[[], float] = time.perf_counter
 
 
@@ -94,6 +104,8 @@ class AgentOrchestraFlowState(BaseModel):
     workspace_run_id: str | None = None
     specialist_report: SpecialistExecutionReport | None = None
     reviewed_diff: DiffReport | None = None
+    lighthouse_seo: LighthouseSEOResult | None = None
+    seo_diagnostic_report: SEODiagnosticReport | None = None
     qa_evidence: QAEvidenceBundle | None = None
     qa_evidence_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     staged_content_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
@@ -129,6 +141,7 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
         evidence_builder: EvidenceBuilder = build_qa_evidence_bundle,
         promotion_service: PromotionService = promote_staged_copy,
         digest_function: DigestFunction = compute_site_tree_digest,
+        lighthouse_runner: LighthouseRunner = run_lighthouse_seo,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         resolved_settings = settings or (dependencies.settings if dependencies else get_settings())
@@ -146,6 +159,7 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
             evidence_builder=evidence_builder,
             promotion_service=promotion_service,
             digest_function=digest_function,
+            lighthouse_runner=lighthouse_runner,
             clock=clock,
         )
         super().__init__(
@@ -181,13 +195,11 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
 
     @router(
         plan_request,
-        emit=["clarification", "out_of_scope", "unsupported_specialist", "executable", "failed"],
+        emit=["clarification", "out_of_scope", "executable", "failed"],
     )
     def route_manager_plan(
         self,
-    ) -> Literal[
-        "clarification", "out_of_scope", "unsupported_specialist", "executable", "failed"
-    ]:
+    ) -> Literal["clarification", "out_of_scope", "executable", "failed"]:
         if self.state.error:
             return "failed"
         plan = self._require_plan()
@@ -195,8 +207,6 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
             return "clarification"
         if plan.status is RoutingStatus.OUT_OF_SCOPE:
             return "out_of_scope"
-        if SpecialistName.SEO in plan.selected_specialists:
-            return "unsupported_specialist"
         return "executable"
 
     @listen("executable")
@@ -238,8 +248,8 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
             self._record_failure(exc, "Specialist execution failed.")
             return None
 
-    @router(execute_specialists, emit=["blocked", "failed", "evidence_ready"])
-    def route_specialist_result(self) -> Literal["blocked", "failed", "evidence_ready"]:
+    @router(execute_specialists, emit=["blocked", "failed", "verification_ready"])
+    def route_specialist_result(self) -> Literal["blocked", "failed", "verification_ready"]:
         if self.state.error or self.state.specialist_report is None:
             return "failed"
         status = self.state.specialist_report.status
@@ -249,6 +259,36 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
             self.state.error = "Specialist execution did not produce a fully successful edit."
             self.state.failure_message = "Specialist execution failed."
             return "failed"
+        return "verification_ready"
+
+    @listen("verification_ready")
+    def run_seo_verification(self) -> LighthouseSEOResult | None:
+        try:
+            plan = self._require_executable_plan()
+            if SpecialistName.SEO not in plan.selected_specialists:
+                return None
+            audit = self._dependencies.lighthouse_runner(
+                self._require_workspace(),
+                self._require_request().target_page,
+                settings=self._dependencies.settings,
+            )
+            self.state.lighthouse_seo = audit
+            if audit.status is not LighthouseRunStatus.SUCCEEDED:
+                raise FlowExecutionError(audit.error or "Lighthouse SEO audit failed.")
+            return audit
+        except Exception as exc:
+            self._record_failure(exc, "Lighthouse SEO verification failed.")
+            return None
+
+    @router(run_seo_verification, emit=["diagnostic_ready", "evidence_ready", "failed"])
+    def route_seo_verification(
+        self,
+    ) -> Literal["diagnostic_ready", "evidence_ready", "failed"]:
+        if self.state.error:
+            return "failed"
+        report = self._require_specialist_report()
+        if report.seo_mode is SEOExecutionMode.DIAGNOSTIC:
+            return "diagnostic_ready"
         return "evidence_ready"
 
     @listen("evidence_ready")
@@ -265,6 +305,7 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
                 specialist_report=report,
                 diff_report=reviewed_diff,
                 site_content_digest=staged_digest.digest,
+                lighthouse_seo=self.state.lighthouse_seo,
             )
             self.state.qa_evidence_digest = evidence.evidence_digest
             self.state.staged_content_digest = staged_digest.digest
@@ -290,7 +331,9 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
             if qa_run.evidence_digest != self.state.qa_evidence_digest:
                 raise ExecutionEvidenceError("QA result does not identify the reviewed evidence.")
             if qa_run.site_content_digest != self.state.staged_content_digest:
-                raise ExecutionEvidenceError("QA result does not identify the reviewed site content.")
+                raise ExecutionEvidenceError(
+                    "QA result does not identify the reviewed site content."
+                )
             self.state.qa_run = qa_run
             return qa_run
         except Exception as exc:
@@ -323,14 +366,6 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
             staging_cleaned=True,
         )
 
-    @listen("unsupported_specialist")
-    def finalize_unsupported_specialist(self) -> EditRunReport:
-        return self._report(
-            status=EditOutcomeStatus.UNSUPPORTED_SPECIALIST,
-            message="SEO execution is not implemented yet.",
-            staging_cleaned=True,
-        )
-
     @listen("blocked")
     def finalize_blocked(self) -> EditRunReport:
         staging_cleaned = self._cleanup_nonaccepted_workspace()
@@ -350,6 +385,44 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
             staging_cleaned=staging_cleaned,
         )
 
+    @listen("diagnostic_ready")
+    def finalize_seo_diagnostic(self) -> EditRunReport:
+        try:
+            report = self._require_specialist_report()
+            reviewed_diff = self.state.reviewed_diff
+            if reviewed_diff is None or not reviewed_diff.is_empty:
+                raise ExecutionEvidenceError(
+                    "SEO diagnostic mode must leave staged source unchanged."
+                )
+            result = report.results[0]
+            if not isinstance(result.completion, SEOCompletion):
+                raise ExecutionEvidenceError("SEO diagnostic completion evidence is missing.")
+            lighthouse = self.state.lighthouse_seo
+            if lighthouse is None or lighthouse.status is not LighthouseRunStatus.SUCCEEDED:
+                raise ExecutionEvidenceError("SEO diagnostic Lighthouse evidence is missing.")
+            self.state.seo_diagnostic_report = SEODiagnosticReport(
+                run_id=report.run_id,
+                target_page=self._require_request().target_page,
+                findings=result.completion.findings,
+                lighthouse=lighthouse,
+                source_unchanged=True,
+            )
+            staging_cleaned = self._cleanup_nonaccepted_workspace()
+            return self._report(
+                status=EditOutcomeStatus.DIAGNOSTIC_COMPLETED,
+                message=result.completion.summary,
+                staging_cleaned=staging_cleaned,
+            )
+        except Exception as exc:
+            self._record_failure(exc, "SEO diagnostic finalization failed.")
+            staging_cleaned = self._cleanup_nonaccepted_workspace()
+            return self._report(
+                status=EditOutcomeStatus.FAILED,
+                message="Edit Flow failed safely.",
+                error=self.state.error,
+                staging_cleaned=staging_cleaned,
+            )
+
     @listen("accepted")
     def promote_and_finalize(self) -> EditRunReport:
         try:
@@ -368,6 +441,7 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
                 specialist_report=self._require_specialist_report(),
                 diff_report=current_diff,
                 site_content_digest=current_digest.digest,
+                lighthouse_seo=self.state.lighthouse_seo,
             )
             if (
                 current_evidence.evidence_digest != self.state.qa_evidence_digest
@@ -420,6 +494,8 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
         self.state.workspace_run_id = None
         self.state.specialist_report = None
         self.state.reviewed_diff = None
+        self.state.lighthouse_seo = None
+        self.state.seo_diagnostic_report = None
         self.state.qa_evidence = None
         self.state.qa_evidence_digest = None
         self.state.staged_content_digest = None
@@ -447,7 +523,7 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
         if plan.status is not RoutingStatus.EXECUTE:
             raise FlowExecutionError("Flow state does not contain an executable Manager plan.")
         if any(
-            specialist not in {SpecialistName.HTML, SpecialistName.CSS}
+            specialist not in {SpecialistName.HTML, SpecialistName.CSS, SpecialistName.SEO}
             for specialist in plan.selected_specialists
         ):
             raise FlowExecutionError("Flow state contains an unsupported specialist.")
@@ -512,8 +588,8 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
         error: str | None = None,
     ) -> EditRunReport:
         promotion = self.state.promotion_result
-        cleanup_warnings = list(promotion.warnings) if promotion is not None else list(
-            self.state.warnings
+        cleanup_warnings = (
+            list(promotion.warnings) if promotion is not None else list(self.state.warnings)
         )
         report = EditRunReport(
             request=self._require_request(),
@@ -522,6 +598,8 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
             plan=self.state.plan,
             run_id=self.state.workspace_run_id,
             specialist_report=self.state.specialist_report,
+            lighthouse_seo=self.state.lighthouse_seo,
+            seo_diagnostic_report=self.state.seo_diagnostic_report,
             qa_run=self.state.qa_run,
             reviewed_diff=self.state.reviewed_diff,
             final_diff=promotion.final_diff if promotion is not None else None,

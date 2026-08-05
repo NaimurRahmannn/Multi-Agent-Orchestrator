@@ -43,8 +43,12 @@ def print_execution_report(
             print(f"completion status: {result.completion.status.value}")
             print(f"completion summary: {_safe_text(result.completion.summary, settings)}")
             if result.completion.remaining_issue:
+                print(f"remaining issue: {_safe_text(result.completion.remaining_issue, settings)}")
+            findings = getattr(result.completion, "findings", [])
+            for finding in findings:
                 print(
-                    f"remaining issue: {_safe_text(result.completion.remaining_issue, settings)}"
+                    f"seo finding [{finding.severity.value}] {finding.code}: "
+                    f"{_safe_text(finding.title, settings)}"
                 )
         print(f"applied patches: {result.applied_patch_count}")
         print(f"rejected patches: {result.rejected_patch_count}")

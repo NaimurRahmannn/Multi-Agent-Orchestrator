@@ -14,6 +14,7 @@ from agentorchestra.scripts.specialist_cli_support import redact_cli_error
 
 EXIT_CODES = {
     EditOutcomeStatus.ACCEPTED: 0,
+    EditOutcomeStatus.DIAGNOSTIC_COMPLETED: 0,
     EditOutcomeStatus.FAILED: 1,
     EditOutcomeStatus.REJECTED: 4,
     EditOutcomeStatus.CLARIFICATION_REQUIRED: 5,
@@ -26,7 +27,7 @@ CRITICAL_RECOVERY_EXIT_CODE = 9
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Run the QA-controlled HTML/CSS edit Flow and promote only on QA accept."
+        description="Run the QA-controlled HTML/CSS/SEO Flow and promote edits only on QA accept."
     )
     parser.add_argument("--target-page", required=True)
     parser.add_argument("--instruction", required=True)
@@ -84,6 +85,12 @@ def print_edit_run_report(report: EditRunReport, settings: Settings | None = Non
             print(f"specialist {result.specialist.value}: {result.status.value}")
             print(f"applied patches: {result.applied_patch_count}")
             print(f"rejected patches: {result.rejected_patch_count}")
+            for index, patch in enumerate(result.patch_results, start=1):
+                reason = patch.rejection_reason.value if patch.rejection_reason else "none"
+                print(
+                    f"specialist {result.specialist.value} patch {index}: "
+                    f"status={patch.status.value} file={patch.file} reason={reason}"
+                )
         diff = report.specialist_report.diff_report
         print(f"changed files: {', '.join(diff.changed_files) or 'none'}")
         print(f"reviewed diff added lines: {diff.total_added_lines}")
@@ -103,6 +110,21 @@ def print_edit_run_report(report: EditRunReport, settings: Settings | None = Non
             if value is not None
         }
         print(f"qa token usage: {usage if usage else 'unavailable'}")
+    else:
+        print("qa run: no")
+    if report.lighthouse_seo is not None:
+        audit = report.lighthouse_seo
+        if audit.score is not None:
+            print(f"lighthouse seo score: {audit.score}")
+        print(f"lighthouse failed audits: {', '.join(audit.failed_audit_ids) or 'none'}")
+        if audit.error:
+            print(f"lighthouse error: {_safe(audit.error, settings)}")
+    if report.seo_diagnostic_report is not None:
+        for finding in report.seo_diagnostic_report.findings:
+            print(
+                f"seo finding [{finding.severity.value}] {finding.code}: "
+                f"{_safe(finding.title, settings)}"
+            )
     print(f"working updated: {'yes' if report.working_updated else 'no'}")
     if report.working_restored:
         print("working restored: yes")

@@ -7,6 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from agentorchestra.exceptions import SpecialistOutputError
+from agentorchestra.seo_models import SEOCompletion
 from agentorchestra.specialist_models import SpecialistCompletion
 
 
@@ -19,6 +20,18 @@ def extract_specialist_completion(output: Any) -> SpecialistCompletion:
     except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
         raise SpecialistOutputError(
             "Specialist response did not match the structured completion contract."
+        ) from exc
+
+
+def extract_seo_completion(output: Any) -> SEOCompletion:
+    """Extract a strict SEO completion without repairing unsupported output."""
+    try:
+        return _extract_model(output, SEOCompletion)
+    except SpecialistOutputError:
+        raise
+    except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise SpecialistOutputError(
+            "SEO response did not match the structured completion contract."
         ) from exc
 
 
@@ -51,6 +64,30 @@ def _extract(output: Any) -> SpecialistCompletion:
         return SpecialistCompletion.model_validate(output.model_dump(mode="json"))
 
     raise SpecialistOutputError("Specialist response did not contain structured completion output.")
+
+
+def _extract_model(output: Any, model: type[BaseModel]) -> Any:
+    if isinstance(output, model):
+        return output
+    if isinstance(output, Mapping):
+        return model.model_validate(output)
+    pydantic_output = getattr(output, "pydantic", None)
+    if pydantic_output is not None:
+        return _extract_model(pydantic_output, model)
+    json_dict = getattr(output, "json_dict", None)
+    if json_dict is not None:
+        return model.model_validate(json_dict)
+    tasks_output = getattr(output, "tasks_output", None)
+    if tasks_output:
+        return _extract_model(tasks_output[-1], model)
+    raw = getattr(output, "raw", None)
+    if isinstance(raw, str) and raw.strip():
+        return model.model_validate_json(_extract_json_object(raw))
+    if isinstance(output, str) and output.strip():
+        return model.model_validate_json(_extract_json_object(output))
+    if isinstance(output, BaseModel):
+        return model.model_validate(output.model_dump(mode="json"))
+    raise SpecialistOutputError("SEO response did not contain structured completion output.")
 
 
 def _extract_json_object(raw: str) -> str:

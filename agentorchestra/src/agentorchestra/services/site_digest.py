@@ -14,9 +14,7 @@ def compute_site_tree_digest(site_root: Path) -> SiteTreeDigest:
     validate_site_structure(site_root)
     root = site_root.resolve(strict=True)
     files = sorted(
-        (path.relative_to(root).as_posix(), path)
-        for path in root.rglob("*")
-        if path.is_file()
+        (path.relative_to(root).as_posix(), path) for path in root.rglob("*") if path.is_file()
     )
     digest = hashlib.sha256()
     names: list[str] = []

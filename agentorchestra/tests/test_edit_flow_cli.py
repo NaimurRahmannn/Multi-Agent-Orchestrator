@@ -134,7 +134,11 @@ def test_edit_flow_cli_prints_accepted_report(tmp_path, capsys):
 
     assert code == 0
     assert fake.calls == [
-        {"request": EditRequest(target_page="index.html", instruction="Apply edit.").model_dump(mode="json")}
+        {
+            "request": EditRequest(target_page="index.html", instruction="Apply edit.").model_dump(
+                mode="json"
+            )
+        }
     ]
     assert "flow outcome: accepted" in output
     assert "working updated: yes" in output
@@ -199,3 +203,43 @@ def test_edit_flow_cli_uses_distinct_critical_recovery_exit_code(tmp_path, capsy
     assert code == run_edit_flow.CRITICAL_RECOVERY_EXIT_CODE == 9
     assert "Critical: working-site recovery is required" in output
     assert str(tmp_path) not in output
+
+
+def test_edit_flow_cli_prints_seo_edit_audit_patch_and_qa_evidence(tmp_path, capsys):
+    from tests.test_seo_flow import run_flow
+
+    settings, _, seo_report = run_flow(tmp_path / "flow", verdict="accept")
+    code = run_edit_flow.main(
+        ["--target-page", "index.html", "--instruction", "Improve SEO.", "--apply"],
+        settings=settings,
+        flow=FakeFlow(seo_report),
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "manager selected specialists: seo" in output
+    assert "specialist seo patch 1: status=applied file=index.html" in output
+    assert "lighthouse seo score: 90" in output
+    assert "lighthouse failed audits: none" in output
+    assert "qa verdict: accept" in output
+    assert "working updated: yes" in output
+
+
+def test_edit_flow_cli_prints_diagnostic_without_qa_or_update(tmp_path, capsys):
+    from tests.test_seo_flow import run_flow
+
+    settings, _, diagnostic = run_flow(tmp_path / "flow", diagnostic=True)
+    code = run_edit_flow.main(
+        ["--target-page", "index.html", "--instruction", "Diagnose SEO.", "--apply"],
+        settings=settings,
+        flow=FakeFlow(diagnostic),
+    )
+
+    output = capsys.readouterr().out
+    assert code == 0
+    assert "flow outcome: diagnostic_completed" in output
+    assert "seo finding [warning] missing_description" in output
+    assert "lighthouse seo score: 90" in output
+    assert "qa run: no" in output
+    assert "working updated: no" in output
+    assert "staging cleaned: yes" in output

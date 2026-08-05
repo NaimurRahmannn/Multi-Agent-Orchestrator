@@ -15,9 +15,11 @@ def live_settings(tmp_path):
         groq_manager_api_key="manager-unit-test-secret",
         groq_html_api_key="html-unit-test-secret",
         groq_css_api_key="css-unit-test-secret",
+        groq_seo_api_key="seo-unit-test-secret",
         groq_manager_model="manager-test-model",
         groq_html_model="html-test-model",
         groq_css_model="css-test-model",
+        groq_seo_model="seo-test-model",
     )
 
 
@@ -77,7 +79,9 @@ def non_execute_plan(status):
         routing_rationale="The request cannot execute.",
         assignments=[],
         acceptance_criteria=[],
-        clarification_question="What should change?" if status == "clarification_required" else None,
+        clarification_question="What should change?"
+        if status == "clarification_required"
+        else None,
         rejection_reason="Unsupported request." if status == "out_of_scope" else None,
     )
 
@@ -94,23 +98,25 @@ def test_clarification_and_out_of_scope_create_no_staging(tmp_path, capsys):
         output = capsys.readouterr().out
 
         assert code == 2
-        expected = "clarification question:" if status == "clarification_required" else "rejection reason:"
+        expected = (
+            "clarification question:" if status == "clarification_required" else "rejection reason:"
+        )
         assert expected in output
         assert staged_runs(settings) == []
 
 
-def test_seo_plan_creates_no_staging_or_specialist_execution(tmp_path, capsys):
+def test_seo_plan_runs_and_cleans_staging(tmp_path, capsys):
     settings = live_settings(tmp_path)
     code = run_edit_preview.main(
         ["--target-page", "index.html", "--instruction", "Improve SEO."],
         settings=settings,
         router=FakeRouter(execute_plan("seo")),
-        execution_service=service(settings, []),
+        execution_service=service(settings, ["succeeded"]),
     )
     output = capsys.readouterr().out
 
-    assert code == 3
-    assert "SEO execution is not implemented yet" in output
+    assert code == 0
+    assert "specialist: seo" in output
     assert staged_runs(settings) == []
 
 

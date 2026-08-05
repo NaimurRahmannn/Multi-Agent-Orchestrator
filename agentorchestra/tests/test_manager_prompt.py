@@ -10,6 +10,9 @@ def test_manager_prompt_contains_ownership_boundaries():
     assert "colors" in prompt
     assert "seo" in prompt
     assert "meta description" in prompt
+    assert "seo_edit" in prompt
+    assert "seo_diagnostic" in prompt
+    assert "structured request_type is authoritative" in prompt
 
 
 def test_manager_prompt_contains_required_routing_rules():

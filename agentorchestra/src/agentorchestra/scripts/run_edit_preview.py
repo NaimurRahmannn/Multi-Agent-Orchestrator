@@ -8,7 +8,7 @@ from pydantic import ValidationError
 from agentorchestra.agents.manager import ManagerRouter, ManagerRoutingInterface
 from agentorchestra.config import GroqAgentName, Settings, get_settings
 from agentorchestra.exceptions import AgentOrchestraError
-from agentorchestra.models import EditRequest, RoutingStatus, SpecialistName
+from agentorchestra.models import EditRequest, RoutingStatus
 from agentorchestra.scripts.specialist_cli_support import (
     print_execution_report,
     print_manager_plan,
@@ -60,10 +60,6 @@ def main(
                 f"rejection reason: {redact_cli_error(plan.rejection_reason or '', resolved_settings)}"
             )
             return 2
-        if SpecialistName.SEO in plan.selected_specialists:
-            print("SEO execution is not implemented yet; no staging workspace was created.")
-            return 3
-
         working_before = tree_digest(resolved_settings.working_site_dir)
         fixture_before = tree_digest(resolved_settings.fixture_site_dir)
         handle = create_staged_copy(settings=resolved_settings)
@@ -92,7 +88,9 @@ def main(
                     cleanup_staged_workspace(handle)
                     print("staging cleanup: complete")
                 except AgentOrchestraError as exc:
-                    print(f"staging cleanup failed: {redact_cli_error(str(exc), resolved_settings)}")
+                    print(
+                        f"staging cleanup failed: {redact_cli_error(str(exc), resolved_settings)}"
+                    )
                     exit_code = 1
     return exit_code
 

@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from agentorchestra.config import GroqAgentName, Settings, get_settings
 from agentorchestra.exceptions import AgentOrchestraError
 from agentorchestra.models import (
+    SEO_DIAGNOSTIC_REQUEST_TYPE,
+    SEO_EDIT_REQUEST_TYPE,
     EditRequest,
     ManagerRoutingPlan,
     RoutingStatus,
@@ -19,6 +21,7 @@ from agentorchestra.scripts.specialist_cli_support import (
     redact_cli_error,
     tree_digest,
 )
+from agentorchestra.seo_models import SEOExecutionMode
 from agentorchestra.services.specialist_execution import SpecialistExecutionService
 from agentorchestra.services.specialist_runner import SpecialistRunner
 from agentorchestra.services.workspace import cleanup_staged_workspace, create_staged_copy
@@ -26,8 +29,9 @@ from agentorchestra.specialist_models import SpecialistExecutionStatus
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run one staged HTML or CSS specialist edit.")
-    parser.add_argument("--specialist", required=True, choices=("html", "css"))
+    parser = argparse.ArgumentParser(description="Run one staged HTML, CSS, or SEO specialist.")
+    parser.add_argument("--specialist", required=True, choices=("html", "css", "seo"))
+    parser.add_argument("--mode", choices=("edit", "diagnostic"), default="edit")
     parser.add_argument("--target-page", required=True)
     parser.add_argument("--task", required=True)
     parser.add_argument("--keep-staging", action="store_true")
@@ -47,16 +51,27 @@ def main(
     exit_code = 1
     try:
         specialist = SpecialistName(args.specialist)
+        mode = SEOExecutionMode(args.mode)
+        if specialist is not SpecialistName.SEO and mode is SEOExecutionMode.DIAGNOSTIC:
+            raise ValueError("Diagnostic mode is supported only by the SEO specialist.")
         resolved_settings.require_groq_configuration(GroqAgentName(specialist.value))
         request = EditRequest(target_page=args.target_page, instruction=args.task)
         assignment = SpecialistAssignment(agent=specialist, task=args.task)
         plan = ManagerRoutingPlan(
             status=RoutingStatus.EXECUTE,
-            request_type=f"manual_{specialist.value}_specialist",
+            request_type=(
+                SEO_DIAGNOSTIC_REQUEST_TYPE
+                if mode is SEOExecutionMode.DIAGNOSTIC
+                else SEO_EDIT_REQUEST_TYPE
+                if specialist is SpecialistName.SEO
+                else f"manual_{specialist.value}_specialist"
+            ),
             selected_specialists=[specialist],
             routing_rationale="Manual single-specialist preview selected by explicit CLI argument.",
             assignments=[assignment],
-            acceptance_criteria=["The requested narrow edit is applied in the approved staged file."],
+            acceptance_criteria=[
+                "The requested narrow edit is applied in the approved staged file."
+            ],
             clarification_question=None,
             rejection_reason=None,
         )
@@ -88,7 +103,9 @@ def main(
                     cleanup_staged_workspace(handle)
                     print("staging cleanup: complete")
                 except AgentOrchestraError as exc:
-                    print(f"staging cleanup failed: {redact_cli_error(str(exc), resolved_settings)}")
+                    print(
+                        f"staging cleanup failed: {redact_cli_error(str(exc), resolved_settings)}"
+                    )
                     exit_code = 1
     return exit_code
 
