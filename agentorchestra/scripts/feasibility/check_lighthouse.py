@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -18,10 +19,11 @@ def main() -> int:
     output_path = PROJECT_ROOT / "reports" / "lighthouse" / "seo.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     chrome_flags = os.getenv("LIGHTHOUSE_CHROME_FLAGS", "").strip()
+    npx = shutil.which("npx") or "npx"
 
     with preview_server(site_root) as base_url:
         command = [
-            "npx",
+            npx,
             "lighthouse",
             f"{base_url}/index.html",
             "--only-categories=seo",

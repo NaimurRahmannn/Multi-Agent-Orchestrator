@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import time
 import uuid
@@ -119,10 +120,11 @@ def _run_site_lighthouse(
     report_name = f"seo-{run_id}-{_safe_id(report_id_factory())}.json"
     output_path = settings.lighthouse_report_dir / report_name
     relative_report = output_path.relative_to(settings.project_root).as_posix()
+    npx = _resolve_npx_executable()
     try:
         with preview_factory(site_root) as base_url:
             command = [
-                "npx",
+                npx,
                 "--no-install",
                 "lighthouse",
                 f"{base_url}/{target_page}",
@@ -155,12 +157,15 @@ def _run_site_lighthouse(
             _elapsed_ms(started, clock),
             "Lighthouse SEO audit could not start safely.",
         )
-    if completed.returncode != 0:
-        return _failed(
-            run_id, target_page, _elapsed_ms(started, clock), "Lighthouse SEO audit failed."
-        )
     latency_ms = _elapsed_ms(started, clock)
     try:
+        if completed.returncode != 0 and not output_path.is_file():
+            return _failed(
+                run_id,
+                target_page,
+                latency_ms,
+                "Lighthouse SEO audit failed.",
+            )
         payload = json.loads(output_path.read_text(encoding="utf-8"))
         return normalize_lighthouse_seo_report(
             payload,
@@ -256,6 +261,13 @@ def _failed(run_id: str, target_page: str, latency_ms: float, error: str) -> Lig
 
 def _validate_target_page(value: str) -> str:
     return EditRequest(target_page=value, instruction="Validate Lighthouse target.").target_page
+
+
+def _resolve_npx_executable() -> str:
+    resolved = shutil.which("npx")
+    if resolved:
+        return resolved
+    return "npx"
 
 
 def _safe_id(value: str) -> str:

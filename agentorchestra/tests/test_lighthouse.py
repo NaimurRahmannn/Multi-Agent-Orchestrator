@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -82,7 +83,8 @@ def test_lighthouse_uses_safe_project_local_seo_only_command_and_normalizes(tmp_
     )
 
     command, kwargs = calls[0]
-    assert command[:3] == ["npx", "--no-install", "lighthouse"]
+    assert os.path.basename(command[0]).lower() in {"npx", "npx.cmd"}
+    assert command[1:3] == ["--no-install", "lighthouse"]
     assert "http://127.0.0.1:43210/index.html" in command
     assert "--only-categories=seo" in command
     assert not any(
@@ -143,6 +145,33 @@ def test_lighthouse_returns_safe_structured_failures(tmp_path, failure):
     assert result.score is None
     assert result.audits == []
     assert "private" not in result.model_dump_json()
+
+
+def test_lighthouse_returns_success_when_report_exists_despite_cleanup_failure(tmp_path):
+    settings = make_settings(tmp_path)
+    handle = create_staged_copy(settings=settings, run_id_factory=lambda: "lh-cleanup-success")
+
+    def runner(command, **kwargs):
+        output = next(
+            item.split("=", 1)[1] for item in command if item.startswith("--output-path=")
+        )
+        with open(output, "w", encoding="utf-8") as report:
+            json.dump(payload(), report)
+        return SimpleNamespace(returncode=1, stdout="", stderr="Runtime error encountered: EPERM")
+
+    result = run_lighthouse_seo(
+        handle,
+        "index.html",
+        settings=settings,
+        subprocess_runner=runner,
+        preview_factory=fake_preview,
+        report_id_factory=lambda: "report",
+        clock=iter([1.0, 1.02]).__next__,
+    )
+
+    assert result.status is LighthouseRunStatus.SUCCEEDED
+    assert result.score == 91
+    assert result.error is None
 
 
 def test_lighthouse_always_exits_preview_context_on_subprocess_failure(tmp_path):

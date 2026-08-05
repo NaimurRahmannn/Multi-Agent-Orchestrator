@@ -39,11 +39,12 @@ def _import_check(module_name: str) -> CheckResult:
 
 
 def _command_check(name: str, command: list[str], timeout: int = 15) -> CheckResult:
-    if not shutil.which(command[0]):
+    resolved = shutil.which(command[0])
+    if not resolved:
         return CheckResult(name, False, f"{command[0]} is not on PATH")
     try:
         completed = subprocess.run(
-            command,
+            [resolved, *command[1:]],
             cwd=PROJECT_ROOT,
             capture_output=True,
             text=True,
