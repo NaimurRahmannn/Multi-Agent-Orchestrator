@@ -25,6 +25,7 @@ class GroqAgentName(str, Enum):  # noqa: UP042 - StrEnum requires Python 3.11.
     MANAGER = "manager"
     HTML = "html"
     CSS = "css"
+    QA = "qa"
 
 
 class Settings(BaseSettings):
@@ -33,9 +34,11 @@ class Settings(BaseSettings):
     groq_manager_api_key: SecretStr | None = Field(default=None, alias="GROQ_MANAGER_API_KEY")
     groq_html_api_key: SecretStr | None = Field(default=None, alias="GROQ_HTML_API_KEY")
     groq_css_api_key: SecretStr | None = Field(default=None, alias="GROQ_CSS_API_KEY")
+    groq_qa_api_key: SecretStr | None = Field(default=None, alias="GROQ_QA_API_KEY")
     groq_manager_model: str | None = Field(default=None, alias="GROQ_MANAGER_MODEL")
     groq_html_model: str | None = Field(default=None, alias="GROQ_HTML_MODEL")
     groq_css_model: str | None = Field(default=None, alias="GROQ_CSS_MODEL")
+    groq_qa_model: str | None = Field(default=None, alias="GROQ_QA_MODEL")
     app_env: str = Field(default="development", alias="APP_ENV")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO",
@@ -61,6 +64,7 @@ class Settings(BaseSettings):
         "groq_manager_model",
         "groq_html_model",
         "groq_css_model",
+        "groq_qa_model",
         "app_env",
         mode="before",
     )
@@ -127,6 +131,12 @@ class Settings(BaseSettings):
                 self.groq_css_model,
                 "GROQ_CSS_MODEL",
             ),
+            GroqAgentName.QA: (
+                self.groq_qa_api_key,
+                "GROQ_QA_API_KEY",
+                self.groq_qa_model,
+                "GROQ_QA_MODEL",
+            ),
         }
         api_key, api_key_name, model, model_name = agent_fields[agent]
         missing: list[str] = []
@@ -151,6 +161,7 @@ class Settings(BaseSettings):
             GroqAgentName.MANAGER: self.groq_manager_model,
             GroqAgentName.HTML: self.groq_html_model,
             GroqAgentName.CSS: self.groq_css_model,
+            GroqAgentName.QA: self.groq_qa_model,
         }
         return models[agent]
 
@@ -170,6 +181,7 @@ class Settings(BaseSettings):
             self.groq_manager_api_key,
             self.groq_html_api_key,
             self.groq_css_api_key,
+            self.groq_qa_api_key,
         )
         return tuple(
             secret.get_secret_value()

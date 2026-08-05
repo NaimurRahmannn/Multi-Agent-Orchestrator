@@ -188,6 +188,8 @@ GROQ_CSS_API_KEY=
 GROQ_MANAGER_MODEL=llama-3.3-70b-versatile
 GROQ_HTML_MODEL=llama-3.3-70b-versatile
 GROQ_CSS_MODEL=openai/gpt-oss-20b
+GROQ_QA_API_KEY=
+GROQ_QA_MODEL=llama-3.3-70b-versatile
 APP_ENV=development
 LOG_LEVEL=INFO
 AGENTORCHESTRA_ROOT=
@@ -195,7 +197,7 @@ AGENTORCHESTRA_ROOT=
 
 Configuration is loaded with `pydantic-settings`. `AGENTORCHESTRA_ROOT` is optional and is mainly useful for tests or unusual local layouts; derived site and report paths remain under that root. Runtime-directory creation is explicit and limited to staging and report directories.
 
-Each Groq key/model pair is bound to only its named agent. To distribute provider quotas, use keys from the separate Groq organizations authorized for those agents; keys from one organization still share that organization's limits. Model IDs may differ by agent, but each must be available to its corresponding organization. Never commit the populated `.env` file.
+Each Groq key/model pair is bound to only its named agent: Manager, HTML, CSS, and QA. To distribute provider quotas, use keys from the separate Groq organizations authorized for those agents; keys from one organization still share that organization's limits. Model IDs may differ by agent, but each must be available to its corresponding organization. Never commit the populated `.env` file.
 
 Install Python dependencies with the project toolchain:
 
