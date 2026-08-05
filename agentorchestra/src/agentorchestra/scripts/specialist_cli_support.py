@@ -75,15 +75,15 @@ def print_execution_report(
 
 def redact_cli_error(message: str, settings: Settings) -> str:
     clean = message.replace("\n", " ").strip()
-    if settings.groq_api_key:
-        secret = settings.groq_api_key.get_secret_value()
-        if secret:
-            clean = clean.replace(secret, "[redacted]")
+    for secret in settings.groq_api_key_values:
+        clean = clean.replace(secret, "[redacted]")
     return clean[:900]
 
 
 def _safe_text(value: str, settings: Settings | None) -> str:
-    if settings is None or not settings.groq_api_key:
+    if settings is None:
         return value
-    secret = settings.groq_api_key.get_secret_value()
-    return value.replace(secret, "[redacted]") if secret else value
+    clean = value
+    for secret in settings.groq_api_key_values:
+        clean = clean.replace(secret, "[redacted]")
+    return clean

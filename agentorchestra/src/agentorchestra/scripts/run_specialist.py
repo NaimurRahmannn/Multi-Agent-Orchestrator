@@ -5,7 +5,7 @@ from collections.abc import Sequence
 
 from pydantic import ValidationError
 
-from agentorchestra.config import Settings, get_settings
+from agentorchestra.config import GroqAgentName, Settings, get_settings
 from agentorchestra.exceptions import AgentOrchestraError
 from agentorchestra.models import (
     EditRequest,
@@ -46,8 +46,8 @@ def main(
     handle = None
     exit_code = 1
     try:
-        resolved_settings.require_groq_configuration()
         specialist = SpecialistName(args.specialist)
+        resolved_settings.require_groq_configuration(GroqAgentName(specialist.value))
         request = EditRequest(target_page=args.target_page, instruction=args.task)
         assignment = SpecialistAssignment(agent=specialist, task=args.task)
         plan = ManagerRoutingPlan(

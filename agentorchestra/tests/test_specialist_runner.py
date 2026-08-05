@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentorchestra.config import GroqConfiguration
+from agentorchestra.config import GroqConfiguration, Settings
 from agentorchestra.exceptions import SpecialistOutputError, UnsupportedSpecialistError
 from agentorchestra.models import EditRequest, SpecialistAssignment, SpecialistName
 from agentorchestra.services.specialist_output import extract_specialist_completion
@@ -252,6 +252,49 @@ def test_one_recorder_is_created_per_run(tmp_path):
 
     assert len(ids) == 2
     assert ids[0] != ids[1]
+
+
+@pytest.mark.parametrize(
+    ("specialist", "expected_key", "executor"),
+    [
+        (SpecialistName.HTML, "html-secret", apply_html),
+        (SpecialistName.CSS, "css-secret", apply_css),
+    ],
+)
+def test_specialist_runner_selects_matching_role_credentials(
+    tmp_path, specialist, expected_key, executor
+):
+    base = make_settings(tmp_path)
+    settings = Settings(
+        project_root=base.project_root,
+        groq_manager_api_key="manager-secret",
+        groq_html_api_key="html-secret",
+        groq_css_api_key="css-secret",
+        groq_model="test-model",
+    )
+    handle = create_staged_copy(
+        settings=settings, run_id_factory=lambda: f"runner-key-{specialist.value}"
+    )
+    base_factory = fake_agent_factory(specialist)
+    captured = []
+
+    def recording_factory(**kwargs):
+        captured.append(kwargs["groq"].api_key)
+        return base_factory(**kwargs)
+
+    runner = SpecialistRunner(
+        settings=settings,
+        agent_factories={specialist: recording_factory},
+        task_factories={specialist: fake_task_factory},
+        crew_factory=lambda agent, task: SimpleNamespace(agent=agent, task=task),
+        crew_executor=executor,
+        clock=iter([1.0, 1.01]).__next__,
+    )
+
+    result = run(runner, handle, specialist)
+
+    assert result.status == "succeeded"
+    assert captured == [expected_key]
 
 
 def test_seo_specialist_is_rejected_before_execution(tmp_path):

@@ -82,10 +82,8 @@ def _redact(message: str) -> str:
     clean = message.replace("\n", " ")
     try:
         settings = get_settings()
-        if settings.groq_api_key:
-            secret = settings.groq_api_key.get_secret_value()
-            if secret:
-                clean = clean.replace(secret, "[redacted]")
+        for secret in settings.groq_api_key_values:
+            clean = clean.replace(secret, "[redacted]")
     except Exception:
         pass
     return clean[:700]

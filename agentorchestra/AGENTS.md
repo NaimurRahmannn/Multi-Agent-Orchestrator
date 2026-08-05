@@ -469,7 +469,8 @@ Do not claim tests passed unless they were actually run.
 
 ### Groq
 
-- Read the key from `GROQ_API_KEY`.
+- Read independent Manager, HTML, and CSS keys from `GROQ_MANAGER_API_KEY`, `GROQ_HTML_API_KEY`, and `GROQ_CSS_API_KEY`.
+- Bind each key only to its matching agent; do not fall back to another agent's key.
 - Never hard-code or log secrets.
 - Keep the model ID configurable.
 - Treat model availability as an environment concern.

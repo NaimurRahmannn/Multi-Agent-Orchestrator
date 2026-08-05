@@ -12,7 +12,9 @@ def live_settings(tmp_path):
     base = make_settings(tmp_path)
     return Settings(
         project_root=base.project_root,
-        groq_api_key="unit-test-secret",
+        groq_manager_api_key="manager-unit-test-secret",
+        groq_html_api_key="html-unit-test-secret",
+        groq_css_api_key="css-unit-test-secret",
         groq_model="test-model",
     )
 
@@ -123,7 +125,8 @@ def test_specialist_failure_cleans_staging_and_returns_nonzero(tmp_path, capsys)
     assert code == 1
     assert "execution status: failed" in output
     assert "staging cleanup: complete" in output
-    assert "unit-test-secret" not in output
+    assert "manager-unit-test-secret" not in output
+    assert "css-unit-test-secret" not in output
     assert "qa" not in output.casefold()
     assert "promotion" not in output.casefold()
     assert staged_runs(settings) == []

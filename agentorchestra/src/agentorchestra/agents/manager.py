@@ -7,7 +7,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, ValidationError
 
-from agentorchestra.config import GroqConfiguration, Settings, get_settings
+from agentorchestra.config import GroqAgentName, GroqConfiguration, Settings, get_settings
 from agentorchestra.exceptions import ConfigurationError, ManagerExecutionError, ManagerOutputError
 from agentorchestra.models import EditRequest, ManagerRoutingPlan, ManagerRunResult, TokenUsage
 from agentorchestra.prompts.manager import (
@@ -236,7 +236,7 @@ class ManagerRouter:
             return self._groq
         settings = self._settings or get_settings()
         try:
-            return settings.require_groq_configuration()
+            return settings.require_groq_configuration(GroqAgentName.MANAGER)
         except ConfigurationError:
             raise
 

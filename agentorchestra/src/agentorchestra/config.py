@@ -1,4 +1,5 @@
 import os
+from enum import Enum
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -18,10 +19,20 @@ class GroqConfiguration(BaseModel):
     model: str
 
 
+class GroqAgentName(str, Enum):  # noqa: UP042 - StrEnum requires Python 3.11.
+    """Live agents with independently configured Groq credentials."""
+
+    MANAGER = "manager"
+    HTML = "html"
+    CSS = "css"
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and `.env`."""
 
-    groq_api_key: SecretStr | None = Field(default=None, alias="GROQ_API_KEY")
+    groq_manager_api_key: SecretStr | None = Field(default=None, alias="GROQ_MANAGER_API_KEY")
+    groq_html_api_key: SecretStr | None = Field(default=None, alias="GROQ_HTML_API_KEY")
+    groq_css_api_key: SecretStr | None = Field(default=None, alias="GROQ_CSS_API_KEY")
     groq_model: str | None = Field(default=None, alias="GROQ_MODEL")
     app_env: str = Field(default="development", alias="APP_ENV")
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
@@ -87,35 +98,56 @@ class Settings(BaseSettings):
         _ensure_inside_root(self.project_root, path)
         return path
 
-    def require_groq_configuration(self) -> GroqConfiguration:
-        """Return safe Groq values required by live operations."""
+    def require_groq_configuration(self, agent: GroqAgentName) -> GroqConfiguration:
+        """Return the selected agent's Groq key and the shared model."""
+        key_fields = {
+            GroqAgentName.MANAGER: (self.groq_manager_api_key, "GROQ_MANAGER_API_KEY"),
+            GroqAgentName.HTML: (self.groq_html_api_key, "GROQ_HTML_API_KEY"),
+            GroqAgentName.CSS: (self.groq_css_api_key, "GROQ_CSS_API_KEY"),
+        }
+        api_key, api_key_name = key_fields[agent]
         missing: list[str] = []
-        if not self.groq_api_key or not self.groq_api_key.get_secret_value().strip():
-            missing.append("GROQ_API_KEY")
+        if not api_key or not api_key.get_secret_value().strip():
+            missing.append(api_key_name)
         if not self.groq_model or not self.groq_model.strip():
             missing.append("GROQ_MODEL")
         if missing:
             names = ", ".join(missing)
             raise ConfigurationError(
-                f"Missing required Groq configuration: {names}. "
+                f"Missing required Groq configuration for {agent.value} agent: {names}. "
                 "Set these values in .env or the process environment before running live checks."
             )
         return GroqConfiguration(
-            api_key=self.groq_api_key.get_secret_value(),
+            api_key=api_key.get_secret_value(),
             model=self.groq_model.strip(),
         )
 
     def require_groq(self) -> None:
-        """Backward-compatible Groq configuration validation."""
-        self.require_groq_configuration()
+        """Validate the Manager credentials used by the basic Groq feasibility check."""
+        self.require_groq_configuration(GroqAgentName.MANAGER)
 
     @property
     def groq_api_key_value(self) -> str:
-        return self.require_groq_configuration().api_key
+        """Return the Manager key used by the basic Groq feasibility check."""
+        return self.require_groq_configuration(GroqAgentName.MANAGER).api_key
+
+    @property
+    def groq_api_key_values(self) -> tuple[str, ...]:
+        """Return configured keys for output redaction without exposing missing values."""
+        keys = (
+            self.groq_manager_api_key,
+            self.groq_html_api_key,
+            self.groq_css_api_key,
+        )
+        return tuple(
+            secret.get_secret_value()
+            for secret in keys
+            if secret is not None and secret.get_secret_value()
+        )
 
     @property
     def groq_model_value(self) -> str:
-        return self.require_groq_configuration().model
+        return self.require_groq_configuration(GroqAgentName.MANAGER).model
 
 
 def _ensure_inside_root(project_root: Path, path: Path) -> None:

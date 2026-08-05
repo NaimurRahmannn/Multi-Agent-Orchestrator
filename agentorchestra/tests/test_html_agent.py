@@ -74,7 +74,7 @@ def test_html_agent_missing_configuration_is_focused_and_redacted(tmp_path, monk
     settings = make_settings(tmp_path)
     handle = create_staged_copy(settings=settings, run_id_factory=lambda: "html-no-config")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_HTML_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_MODEL", raising=False)
 
     with pytest.raises(ConfigurationError) as error:
@@ -84,5 +84,5 @@ def test_html_agent_missing_configuration_is_focused_and_redacted(tmp_path, monk
             settings=Settings(project_root=settings.project_root),
         )
 
-    assert "GROQ_API_KEY" in str(error.value)
+    assert "GROQ_HTML_API_KEY" in str(error.value)
     assert "unit-test-secret" not in str(error.value)

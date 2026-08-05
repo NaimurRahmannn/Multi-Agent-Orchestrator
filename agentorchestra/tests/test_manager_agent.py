@@ -68,15 +68,43 @@ def test_llm_construction_is_deferred_until_route(monkeypatch):
     assert calls == ["llama-test"]
 
 
+def test_manager_router_selects_only_manager_credentials_from_settings():
+    captured = []
+    settings = Settings(
+        groq_manager_api_key="manager-secret",
+        groq_html_api_key="html-secret",
+        groq_css_api_key="css-secret",
+        groq_model="llama-test",
+    )
+    router = manager.ManagerRouter(
+        settings=settings,
+        crew_factory=lambda groq: captured.append(groq) or object(),
+        crew_executor=lambda crew, inputs: {
+            "status": "execute",
+            "request_type": "css_change",
+            "selected_specialists": ["css"],
+            "routing_rationale": "CSS owns presentation changes.",
+            "assignments": [{"agent": "css", "task": "Change button color."}],
+            "acceptance_criteria": ["Button color changes."],
+            "clarification_question": None,
+            "rejection_reason": None,
+        },
+    )
+
+    router.route({"target_page": "index.html", "instruction": "Change button color."})
+
+    assert [configuration.api_key for configuration in captured] == ["manager-secret"]
+
+
 def test_missing_groq_configuration_raises_focused_error(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    monkeypatch.delenv("GROQ_MANAGER_API_KEY", raising=False)
     monkeypatch.delenv("GROQ_MODEL", raising=False)
     router = manager.ManagerRouter(settings=Settings())
 
     with pytest.raises(ConfigurationError) as error:
         router.route({"target_page": "index.html", "instruction": "Change button color."})
 
-    assert "GROQ_API_KEY" in str(error.value)
+    assert "GROQ_MANAGER_API_KEY" in str(error.value)
     assert "GROQ_MODEL" in str(error.value)
     assert "unit-test-secret" not in str(error.value)

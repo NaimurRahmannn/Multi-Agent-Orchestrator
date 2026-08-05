@@ -8,7 +8,7 @@ from agentorchestra.agents.specialist_support import (
     build_specialist_task,
     validate_target_page,
 )
-from agentorchestra.config import GroqConfiguration, Settings, get_settings
+from agentorchestra.config import GroqAgentName, GroqConfiguration, Settings, get_settings
 from agentorchestra.models import EditRequest, SpecialistAssignment, SpecialistName
 from agentorchestra.prompts.specialists import (
     HTML_AGENT_BACKSTORY,
@@ -34,7 +34,9 @@ def build_html_agent(
 ) -> Any:
     """Build one HTML Agent whose tools are bound to one staged target page."""
     validated_target = validate_target_page(target_page)
-    configuration = groq or (settings or get_settings()).require_groq_configuration()
+    configuration = groq or (settings or get_settings()).require_groq_configuration(
+        GroqAgentName.HTML
+    )
     allowed = (validated_target,)
     tools = [
         ReadFileTool(handle=workspace, allowed_files=allowed),

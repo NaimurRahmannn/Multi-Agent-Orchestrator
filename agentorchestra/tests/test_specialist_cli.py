@@ -16,7 +16,9 @@ def live_settings(tmp_path):
     base = make_settings(tmp_path)
     return Settings(
         project_root=base.project_root,
-        groq_api_key="unit-test-secret",
+        groq_manager_api_key="manager-unit-test-secret",
+        groq_html_api_key="html-unit-test-secret",
+        groq_css_api_key="css-unit-test-secret",
         groq_model="test-model",
     )
 
@@ -57,6 +59,32 @@ def test_single_specialist_cli_html_and_css_display_and_cleanup(tmp_path, capsys
         assert "fixture unchanged: yes" in output
         assert "staging cleanup: complete" in output
         assert staged_runs(settings) == []
+
+
+def test_single_specialist_cli_requires_only_selected_agent_key(tmp_path, capsys):
+    base = make_settings(tmp_path)
+    settings = Settings(
+        project_root=base.project_root,
+        groq_css_api_key="css-only-secret",
+        groq_model="test-model",
+    )
+
+    code = run_specialist.main(
+        [
+            "--specialist",
+            "css",
+            "--target-page",
+            "index.html",
+            "--task",
+            "Perform css edit.",
+        ],
+        settings=settings,
+        execution_service=service(settings, ["succeeded"]),
+    )
+
+    assert code == 0
+    assert "css-only-secret" not in capsys.readouterr().out
+    assert staged_runs(settings) == []
 
 
 def test_single_cli_displays_rejected_then_applied_evidence(tmp_path, capsys):
@@ -123,7 +151,7 @@ def test_single_cli_blocked_and_failed_return_nonzero_and_redact(tmp_path, capsy
         output = capsys.readouterr().out
         assert code == 1
         assert f"runtime status: {status}" in output
-        assert "unit-test-secret" not in output
+        assert "css-unit-test-secret" not in output
         assert "chain-of-thought" not in output.casefold()
         assert staged_runs(settings) == []
 

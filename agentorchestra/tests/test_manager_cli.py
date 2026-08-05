@@ -92,7 +92,7 @@ def test_manager_cli_prints_clarification_and_out_of_scope(capsys):
 
 
 def test_manager_cli_returns_nonzero_for_errors_and_redacts(capsys, monkeypatch):
-    monkeypatch.setenv("GROQ_API_KEY", "unit-test-secret")
+    monkeypatch.setenv("GROQ_MANAGER_API_KEY", "unit-test-secret")
     get_settings.cache_clear()
 
     try:

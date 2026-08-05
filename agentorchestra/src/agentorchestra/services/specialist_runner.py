@@ -12,7 +12,7 @@ from agentorchestra.agents.manager import (
     normalize_token_usage,
 )
 from agentorchestra.agents.specialist_support import build_specialist_crew
-from agentorchestra.config import GroqConfiguration, Settings, get_settings
+from agentorchestra.config import GroqAgentName, GroqConfiguration, Settings, get_settings
 from agentorchestra.exceptions import UnsupportedSpecialistError
 from agentorchestra.models import EditRequest, SpecialistAssignment, SpecialistName, TokenUsage
 from agentorchestra.services.specialist_output import extract_specialist_completion
@@ -108,7 +108,7 @@ class SpecialistRunner:
                 end_line=1,
                 allowed_files=(validated_request.target_page,),
             )
-            groq = self._resolve_groq()
+            groq = self._resolve_groq(specialist)
             recorder = self._recorder_factory()
             agent = self._agent_factories[specialist](
                 workspace=workspace,
@@ -174,10 +174,12 @@ class SpecialistRunner:
             error=error,
         )
 
-    def _resolve_groq(self) -> GroqConfiguration:
+    def _resolve_groq(self, specialist: SpecialistName) -> GroqConfiguration:
         if self._groq is not None:
             return self._groq
-        return (self._settings or get_settings()).require_groq_configuration()
+        return (self._settings or get_settings()).require_groq_configuration(
+            GroqAgentName(specialist.value)
+        )
 
 
 def _derive_run_status(
