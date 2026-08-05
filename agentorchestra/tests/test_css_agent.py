@@ -26,6 +26,9 @@ def test_css_agent_uses_page_read_scope_and_stylesheet_patch_scope(tmp_path):
     assert agent.reasoning is False
     assert agent.max_iter == 7
     assert agent.max_retry_limit == 0
+    assert agent.llm.max_tokens == 500
+    assert agent.llm.timeout == 120
+    assert agent.llm.additional_params["max_retries"] == 2
     assert len(agent.tools) == 2
     assert agent.tools[0].allowed_files == ("index.html", "style.css")
     assert agent.tools[1].allowed_files == ("style.css",)

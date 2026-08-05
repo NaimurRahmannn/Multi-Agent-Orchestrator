@@ -29,6 +29,9 @@ def test_html_agent_uses_bound_tools_and_safe_configuration(tmp_path):
     assert agent.max_iter == 7
     assert agent.max_retry_limit == 0
     assert agent.llm.model == "groq/openai/gpt-oss-20b"
+    assert agent.llm.max_tokens == 500
+    assert agent.llm.timeout == 120
+    assert agent.llm.additional_params["max_retries"] == 2
     assert [tool.name for tool in agent.tools] == ["read_file", "propose_patch"]
     assert agent.tools[0].allowed_files == ("index.html",)
     assert agent.tools[1].allowed_files == ("index.html",)
@@ -53,6 +56,7 @@ def test_html_task_requests_native_strict_completion(tmp_path):
 
     assert task.agent is agent
     assert task.output_pydantic.__name__ == "SpecialistCompletion"
+    assert task.max_retries == 0
     assert task.guardrail_max_retries == 0
     assert task.async_execution is False
     assert "Allowed patch files" in task.description

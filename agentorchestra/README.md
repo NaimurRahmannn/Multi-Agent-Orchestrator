@@ -160,6 +160,8 @@ python scripts/run_edit_preview.py \
 
 The routed command uses the Manager's key/model pair for routing and each selected specialist's matching key/model pair for editing. The single-specialist command requires only its matching specialist pair. Both commands require network access and consume Groq tokens. They create a copy under `sites/staging/<run_id>`, never edit `sites/working` or `sites/fixture`, and clean staging in a `finally` block by default. Use `--keep-staging` only when manual inspection is needed.
 
+Live Manager and specialist LLM calls use a small provider retry budget for transient Groq rate limits. Short `retry after` TPM windows may pause and retry the same provider request up to two times. CrewAI agent and task retries remain disabled, so failed patch workflows are not replayed as a separate agent run.
+
 These commands do not run QA, promote staging, or modify working. SEO execution is rejected before staging. The routed preview is not the final CrewAI Flow. Lighthouse production execution, screenshots, Streamlit, and the final promotion workflow remain later work.
 
 ## Prerequisites

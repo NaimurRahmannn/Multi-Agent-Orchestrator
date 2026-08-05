@@ -57,7 +57,9 @@ def build_manager_llm(groq: GroqConfiguration) -> Any:
         provider="groq",
         api_key=groq.api_key,
         temperature=0,
-        max_tokens=800,
+        max_tokens=500,
+        max_retries=2,
+        timeout=120,
     )
 
 

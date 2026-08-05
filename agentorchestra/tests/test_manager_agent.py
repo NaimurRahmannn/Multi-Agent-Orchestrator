@@ -26,7 +26,11 @@ def test_build_manager_agent_uses_configured_model_and_no_tools():
     assert agent.verbose is False
     assert agent.tools == []
     assert agent.llm.model == "groq/llama-test"
+    assert agent.llm.max_tokens == 500
+    assert agent.llm.timeout == 120
+    assert agent.llm.additional_params["max_retries"] == 2
     assert agent.max_iter == 1
+    assert agent.max_retry_limit == 0
     assert manager.MANAGER_SYSTEM_PROMPT in agent.backstory
 
 
@@ -39,6 +43,8 @@ def test_build_manager_task_requests_json_for_local_validation():
     assert "Return only one JSON object" in task.expected_output
     assert task.tools == []
     assert task.async_execution is False
+    assert task.max_retries == 0
+    assert task.guardrail_max_retries == 0
 
 
 def test_llm_construction_is_deferred_until_route(monkeypatch):
