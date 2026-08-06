@@ -162,7 +162,11 @@ def _run_site_lighthouse(
         )
     latency_ms = _elapsed_ms(started, clock)
     try:
-        if completed.returncode != 0:
+        # On Windows chrome-launcher can finish the audit and write a complete
+        # report, then exit non-zero because its temporary Chromium profile is
+        # still locked during cleanup. Treat the validated report as the audit
+        # evidence; a missing or malformed report continues to fail closed.
+        if completed.returncode != 0 and not output_path.is_file():
             _remove_failed_report(output_path)
             return _failed(
                 run_id,

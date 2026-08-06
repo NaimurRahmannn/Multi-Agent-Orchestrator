@@ -174,7 +174,7 @@ def test_lighthouse_removes_partial_report_after_timeout(tmp_path):
     assert list(settings.lighthouse_report_dir.glob("seo-*.json")) == []
 
 
-def test_lighthouse_rejects_and_removes_report_when_process_exits_nonzero(tmp_path):
+def test_lighthouse_accepts_valid_report_when_process_cleanup_exits_nonzero(tmp_path):
     settings = make_settings(tmp_path)
     handle = create_staged_copy(settings=settings, run_id_factory=lambda: "lh-cleanup-success")
 
@@ -196,9 +196,9 @@ def test_lighthouse_rejects_and_removes_report_when_process_exits_nonzero(tmp_pa
         clock=iter([1.0, 1.02]).__next__,
     )
 
-    assert result.status is LighthouseRunStatus.FAILED
-    assert result.score is None
-    assert list(settings.lighthouse_report_dir.glob("seo-*.json")) == []
+    assert result.status is LighthouseRunStatus.SUCCEEDED
+    assert result.score == 91
+    assert (settings.project_root / result.report_path).is_file()
 
 
 def test_lighthouse_always_exits_preview_context_on_subprocess_failure(tmp_path):

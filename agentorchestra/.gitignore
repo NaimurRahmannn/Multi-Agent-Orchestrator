@@ -6,6 +6,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.test-tmp-*/
 .coverage
 htmlcov/
 .ruff_cache/
@@ -20,3 +21,7 @@ reports/routing/*
 !reports/routing/.gitkeep
 sites/staging/*
 !sites/staging/.gitkeep
+.agentorchestra-*-candidate-*/
+.agentorchestra-*-backup-*/
+sites/.agentorchestra-*-candidate-*/
+sites/.agentorchestra-*-backup-*/

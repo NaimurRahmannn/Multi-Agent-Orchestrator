@@ -28,6 +28,8 @@ agentorchestra-reset = "agentorchestra.scripts.reset_demo_site:main"
 agentorchestra-lighthouse-seo = "agentorchestra.scripts.run_lighthouse_seo:main"
 agentorchestra-ui = "agentorchestra.scripts.run_ui:main"
 agentorchestra-screenshot = "agentorchestra.scripts.capture_page_screenshot:main"
+agentorchestra-demo = "agentorchestra.scripts.run_demo:main"
+agentorchestra-verify-install = "agentorchestra.scripts.verify_clean_install:main"
 
 [build-system]
 requires = ["hatchling"]
