@@ -26,6 +26,8 @@ agentorchestra-edit-preview = "agentorchestra.scripts.run_edit_preview:main"
 agentorchestra-edit = "agentorchestra.scripts.run_edit_flow:main"
 agentorchestra-reset = "agentorchestra.scripts.reset_demo_site:main"
 agentorchestra-lighthouse-seo = "agentorchestra.scripts.run_lighthouse_seo:main"
+agentorchestra-ui = "agentorchestra.scripts.run_ui:main"
+agentorchestra-screenshot = "agentorchestra.scripts.capture_page_screenshot:main"
 
 [build-system]
 requires = ["hatchling"]

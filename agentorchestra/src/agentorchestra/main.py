@@ -21,7 +21,8 @@ class AgentOrchestraStatusFlow(Flow[AgentOrchestraStatusState]):
             "scripts/run_specialist.py and scripts/run_edit_preview.py. "
             "The QA-controlled edit Flow is available through scripts/run_edit_flow.py "
             "with --apply, and reset is available through scripts/reset_demo_site.py --reset. "
-            "SEO execution, Lighthouse, screenshots, Streamlit, and UI orchestration are future work."
+            "SEO execution, Lighthouse SEO evidence, screenshot observability, and the "
+            "Streamlit supervisor are available through their documented commands."
         )
 
     @listen(prepare)

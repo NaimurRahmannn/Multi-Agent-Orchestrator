@@ -8,6 +8,7 @@ _UNC_PATH = re.compile(r"(?:^|(?<=[\s\"']))\\\\[^\\\s]+\\[^\\\s]+")
 _POSIX_PATH = re.compile(
     r"(?<![A-Za-z0-9:])/(?:home|tmp|Users|var|etc|opt|srv|mnt|private)/[^\s\"']+"
 )
+_GROQ_KEY = re.compile(r"(?i)gsk_[A-Za-z0-9_-]+")
 
 
 def validate_relative_site_path(value: str) -> str:
@@ -44,3 +45,8 @@ def redact_absolute_path_text(value: str) -> str:
     clean = _WINDOWS_DRIVE_PATH.sub("[path]", value)
     clean = _UNC_PATH.sub(" [path]", clean)
     return _POSIX_PATH.sub("[path]", clean)
+
+
+def redact_secret_like_text(value: str) -> str:
+    """Redact recognizable provider-key tokens from otherwise safe diagnostic text."""
+    return _GROQ_KEY.sub("[redacted]", value)

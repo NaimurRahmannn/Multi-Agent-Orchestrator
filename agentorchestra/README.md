@@ -14,7 +14,7 @@ The project includes its original feasibility checks plus the production lifecyc
 - Manual feasibility checks for CrewAI imports, Groq connectivity, structured Manager output, Lighthouse SEO-only execution, and Playwright Chromium screenshots.
 - Deterministic tests that do not call Groq, Lighthouse, or browser automation.
 
-Production Manager routing, staged workspace tooling, HTML/CSS/SEO specialist execution, SEO diagnostics, SEO-only Lighthouse evidence, QA-controlled promotion, and reset are implemented. Screenshots, Streamlit, accessibility/content agents, JavaScript editing, arbitrary sites, and non-SEO Lighthouse categories are not implemented.
+Production Manager routing, staged workspace tooling, HTML/CSS/SEO specialist execution, SEO diagnostics, SEO-only Lighthouse evidence, before/proposed-after screenshots, structured timeline and metrics, QA-controlled promotion, transactional reset, and the Streamlit supervisor UI are implemented. Accessibility/content agents, JavaScript editing, arbitrary sites, visual-regression scoring, and non-SEO Lighthouse categories are not implemented.
 
 ## Domain Contracts Status
 
@@ -29,7 +29,7 @@ The domain-contract work adds the production configuration and strict models fut
 
 Supported routing statuses are `execute`, `clarification_required`, and `out_of_scope`. Supported specialist names are `html`, `css`, and `seo`; QA is intentionally not a selectable specialist.
 
-Production QA, Flow orchestration, SEO contracts, and normalized Lighthouse evidence are documented below. Screenshot services and the Streamlit UI remain future work.
+Production QA, Flow orchestration, SEO contracts, normalized Lighthouse evidence, screenshot observability, and the Streamlit UI are documented below.
 
 ## Manager Routing Status
 
@@ -198,11 +198,13 @@ EditRequest
   -> @start Manager routing
   -> Manager router: clarify / out of scope / executable
   -> fresh staging transition
+  -> before screenshot from protected working content
   -> selected HTML/CSS/SEO specialists in Manager order
   -> specialist-result router
   -> SEO-only Lighthouse when SEO is selected
   -> SEO diagnostic returns findings + audit without QA or promotion
   -> deterministic evidence and content-digest validation
+  -> proposed-after screenshot from the exact reviewed staged digest
   -> tool-free QA Agent
   -> QA verdict router
   -> QA accept promotes; every other staged outcome discards
@@ -267,7 +269,27 @@ python scripts/reset_demo_site.py --reset
 
 The reset command uses the same candidate, digest, commit, verified rollback, and post-commit warning semantics. It does not remove unrelated staging runs. Reset cleanup warnings remain successful resets; a rollback failure returns the same critical exit code 9.
 
-Screenshots, Streamlit, accessibility/content agents, JavaScript editing, arbitrary sites, and Performance/Accessibility/Best Practices/PWA Lighthouse categories remain excluded.
+Screenshot failures are observability warnings and do not normally block specialists, QA, or promotion. Unsafe screenshot path boundaries still fail closed. Screenshots never enter the QA evidence digest. Accessibility/content agents, JavaScript editing, arbitrary sites, visual pixel-diff logic, and Performance/Accessibility/Best Practices/PWA Lighthouse categories remain excluded.
+
+## Streamlit Supervisor UI
+
+Launch the production dashboard from the application root:
+
+```bash
+uv run streamlit run src/agentorchestra/ui/app.py
+```
+
+The fixed-path wrapper is equivalent:
+
+```bash
+python scripts/run_ui.py
+```
+
+The UI exposes only validated top-level working-site HTML pages. A confirmation checkbox is required before a run can create staging or call Groq, Lighthouse, Playwright, QA, or promotion. A separate confirmation protects the existing transactional reset. It renders routing, actual timeline events, before/proposed-after evidence, specialists, patch evidence, deterministic diff, normalized Lighthouse SEO evidence, QA results, aggregate metrics, warnings, and in-memory sanitized downloads.
+
+Accepted runs label the staged screenshot `After — applied`. Rejected, blocked, and failed runs label it `Proposed result — not applied`; working remains unchanged. SEO diagnostics launch no screenshots, skip QA and promotion, and report why.
+
+Screenshot files are generated under `reports/screenshots/<run-id>/` and ignored by Git. They are fixed 1440×900 desktop, full-page captures served from an ephemeral loopback preview server. Browser requests to external HTTP/HTTPS origins are aborted. Reports contain only project-relative screenshot paths, and the UI revalidates the path and symlink boundary before reading image bytes.
 
 ## Prerequisites
 
@@ -318,11 +340,19 @@ Install Node dependencies for Lighthouse from this app root:
 npm install
 ```
 
-Install Playwright Chromium:
+Install Playwright Chromium in the same virtual environment used to run AgentOrchestra:
 
 ```bash
-playwright install chromium
+python -m playwright install chromium
 ```
+
+For a local-only screenshot smoke test that makes no Groq or Lighthouse call:
+
+```bash
+python scripts/capture_page_screenshot.py --target-page index.html
+```
+
+If the screenshot reports Playwright or Chromium unavailable, first confirm the virtual environment is active, then rerun the Chromium installation command above. If Lighthouse is unavailable, run `npm install` from this application root. Groq rate-limit failures remain provider/organization quota failures; screenshots and shorter instructions do not remove an organization-level TPM limit.
 
 ## Feasibility Checks
 
@@ -353,7 +383,8 @@ Expected generated outputs:
 - `reports/routing/manager_trials.json`
 - `reports/routing/manager_routing_benchmark.json`
 - `reports/lighthouse/seo-<run-id>-<report-id>.json`
-- `reports/screenshots/index.png`
+- `reports/screenshots/<run-id>/before-<page>.png`
+- `reports/screenshots/<run-id>/proposed-after-<page>.png`
 
 ## Tests And Linting
 

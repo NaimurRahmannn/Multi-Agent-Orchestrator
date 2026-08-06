@@ -143,7 +143,7 @@ def run_flow(tmp_path, *, diagnostic=False, verdict="accept", lighthouse=success
 def test_seo_edit_accepts_with_matching_lighthouse_then_promotes(tmp_path):
     settings, qa, report = run_flow(tmp_path, verdict="accept")
 
-    assert report.status == "accepted"
+    assert report.status == "accepted", report.error
     assert report.lighthouse_seo.score == 90
     assert qa.calls[0].lighthouse_seo == report.lighthouse_seo
     assert "Harbor Light Web Design" in (settings.working_site_dir / "index.html").read_text()

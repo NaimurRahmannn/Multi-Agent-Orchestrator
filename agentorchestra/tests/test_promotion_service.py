@@ -40,6 +40,37 @@ def test_promote_staged_copy_replaces_working_and_cleans_temps(tmp_path):
     assert not handle.path.exists()
 
 
+def test_promotion_retries_short_lived_permission_error_during_candidate_copy(tmp_path):
+    settings = make_settings(tmp_path)
+    handle = create_staged_copy(settings=settings, run_id_factory=lambda: "retry-copy")
+    propose_patch(
+        handle,
+        specialist=SpecialistName.CSS,
+        file="style.css",
+        old_text="  background: var(--accent);\n",
+        new_text="  background: #0b3d91;\n",
+        summary="Promote CSS edit.",
+    )
+    reviewed = generate_diff(handle, settings=settings)
+    calls = []
+
+    def transient_copy(source, destination, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise PermissionError("temporary lock")
+        return shutil.copytree(source, destination, **kwargs)
+
+    result = promote_staged_copy(
+        handle,
+        reviewed,
+        settings=settings,
+        copytree=transient_copy,
+    )
+
+    assert result.status == "committed"
+    assert calls == [1, 1]
+
+
 def test_promote_rejects_staging_mutation_after_qa_review(tmp_path):
     settings = make_settings(tmp_path)
     handle = create_staged_copy(settings=settings, run_id_factory=lambda: "changed")

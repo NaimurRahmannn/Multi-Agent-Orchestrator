@@ -19,11 +19,15 @@ def test_production_flow_declares_real_crewai_transition_graph():
         "failed",
     }
     assert methods["create_workspace"].listen == "executable"
-    assert methods["execute_specialists"].listen == "workspace_ready"
+    assert methods["capture_before_screenshot"].listen == "workspace_ready"
+    assert methods["route_before_screenshot"].router is True
+    assert methods["execute_specialists"].listen == "specialists_ready"
     assert methods["route_specialist_result"].router is True
     assert methods["run_seo_verification"].listen == "verification_ready"
     assert methods["route_seo_verification"].router is True
     assert methods["validate_and_build_qa_evidence"].listen == "evidence_ready"
+    assert methods["capture_proposed_screenshot"].listen == "screenshot_ready"
+    assert methods["route_proposed_screenshot"].router is True
     assert methods["execute_qa"].listen == "qa_ready"
     assert methods["route_qa_verdict"].router is True
     assert methods["promote_and_finalize"].listen == "accepted"

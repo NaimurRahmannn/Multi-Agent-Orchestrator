@@ -145,9 +145,36 @@ def test_lighthouse_returns_safe_structured_failures(tmp_path, failure):
     assert result.score is None
     assert result.audits == []
     assert "private" not in result.model_dump_json()
+    assert list(settings.lighthouse_report_dir.glob("seo-*.json")) == []
 
 
-def test_lighthouse_returns_success_when_report_exists_despite_cleanup_failure(tmp_path):
+def test_lighthouse_removes_partial_report_after_timeout(tmp_path):
+    settings = make_settings(tmp_path)
+    handle = create_staged_copy(settings=settings, run_id_factory=lambda: "lh-partial")
+
+    def runner(command, **kwargs):
+        output = next(
+            item.split("=", 1)[1] for item in command if item.startswith("--output-path=")
+        )
+        with open(output, "w", encoding="utf-8") as report:
+            report.write("partial")
+        raise subprocess.TimeoutExpired(command, 1)
+
+    result = run_lighthouse_seo(
+        handle,
+        "index.html",
+        settings=settings,
+        subprocess_runner=runner,
+        preview_factory=fake_preview,
+        report_id_factory=lambda: "report",
+        clock=iter([1.0, 1.01]).__next__,
+    )
+
+    assert result.status is LighthouseRunStatus.FAILED
+    assert list(settings.lighthouse_report_dir.glob("seo-*.json")) == []
+
+
+def test_lighthouse_rejects_and_removes_report_when_process_exits_nonzero(tmp_path):
     settings = make_settings(tmp_path)
     handle = create_staged_copy(settings=settings, run_id_factory=lambda: "lh-cleanup-success")
 
@@ -169,9 +196,9 @@ def test_lighthouse_returns_success_when_report_exists_despite_cleanup_failure(t
         clock=iter([1.0, 1.02]).__next__,
     )
 
-    assert result.status is LighthouseRunStatus.SUCCEEDED
-    assert result.score == 91
-    assert result.error is None
+    assert result.status is LighthouseRunStatus.FAILED
+    assert result.score is None
+    assert list(settings.lighthouse_report_dir.glob("seo-*.json")) == []
 
 
 def test_lighthouse_always_exits_preview_context_on_subprocess_failure(tmp_path):

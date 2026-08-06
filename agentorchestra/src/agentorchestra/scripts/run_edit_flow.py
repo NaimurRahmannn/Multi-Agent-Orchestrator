@@ -7,7 +7,7 @@ from pydantic import ValidationError
 
 from agentorchestra.config import Settings, get_settings
 from agentorchestra.exceptions import AgentOrchestraError, PromotionRollbackError
-from agentorchestra.flow import AgentOrchestraFlow
+from agentorchestra.flow import AgentOrchestraFlow, build_production_flow_dependencies
 from agentorchestra.models import EditRequest
 from agentorchestra.pipeline_models import EditOutcomeStatus, EditRunReport
 from agentorchestra.scripts.specialist_cli_support import redact_cli_error
@@ -52,7 +52,12 @@ def main(
         return 2
     try:
         request = EditRequest(target_page=args.target_page, instruction=args.instruction)
-        report = (flow or AgentOrchestraFlow(settings=resolved_settings)).kickoff(
+        report = (
+            flow
+            or AgentOrchestraFlow(
+                dependencies=build_production_flow_dependencies(settings=resolved_settings)
+            )
+        ).kickoff(
             inputs={"request": request.model_dump(mode="json")}
         )
         report = EditRunReport.model_validate(report)

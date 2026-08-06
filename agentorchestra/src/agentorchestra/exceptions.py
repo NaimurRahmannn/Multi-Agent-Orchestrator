@@ -68,3 +68,7 @@ class PromotionRollbackError(PromotionError):
 
 class FlowExecutionError(AgentOrchestraError):
     """Raised when the edit Flow reaches an invalid lifecycle state."""
+
+
+class ScreenshotSafetyError(AgentOrchestraError):
+    """Raised when screenshot capture detects an unsafe or corrupted path boundary."""

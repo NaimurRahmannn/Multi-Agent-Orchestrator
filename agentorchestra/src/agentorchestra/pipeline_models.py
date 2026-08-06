@@ -23,7 +23,9 @@ from agentorchestra.models import (
     SpecialistName,
     TokenUsage,
 )
+from agentorchestra.observability_models import RunMetrics, RunTimeline
 from agentorchestra.path_safety import reject_absolute_path_text, validate_relative_site_path
+from agentorchestra.screenshot_models import ScreenshotArtifact, ScreenshotKind, ScreenshotStatus
 from agentorchestra.seo_models import (
     LighthouseRunStatus,
     LighthouseSEOResult,
@@ -300,6 +302,9 @@ class EditRunReport(AgentOrchestraModel):
     warnings: list[StrictStr] = Field(default_factory=list)
     cleanup_warnings: list[StrictStr] = Field(default_factory=list)
     recovery_required: StrictBool = False
+    screenshots: list[ScreenshotArtifact] = Field(default_factory=list)
+    timeline: RunTimeline = Field(default_factory=RunTimeline)
+    metrics: RunMetrics | None = None
 
     @field_validator("message", "error", mode="before")
     @classmethod
@@ -333,7 +338,35 @@ class EditRunReport(AgentOrchestraModel):
                     message="user-facing evidence must not include absolute paths.",
                 )
         self._validate_lighthouse_selection()
+        self._validate_observability()
         return self
+
+    def _validate_observability(self) -> None:
+        if self.run_id is None and self.screenshots:
+            raise ValueError("Screenshots require an executable run ID.")
+        if any(item.run_id != self.run_id for item in self.screenshots):
+            raise ValueError("Screenshot run IDs must match the Flow run.")
+        kinds = [item.kind for item in self.screenshots]
+        if len(kinds) != len(set(kinds)):
+            raise ValueError("A report may contain only one screenshot of each kind.")
+        if (
+            self.timeline.run_id is not None
+            and self.run_id is not None
+            and self.timeline.run_id != self.run_id
+        ):
+            raise ValueError("Timeline run ID must match the Flow run.")
+        if self.status is EditOutcomeStatus.ACCEPTED:
+            proposed = next(
+                (
+                    item
+                    for item in self.screenshots
+                    if item.kind is ScreenshotKind.PROPOSED_AFTER
+                    and item.status is ScreenshotStatus.SUCCEEDED
+                ),
+                None,
+            )
+            if proposed is not None and proposed.source_site_digest != self.final_working_digest:
+                raise ValueError("Accepted screenshot digest must match final working content.")
 
     def _validate_accepted(self) -> None:
         if self.manager_result is None or self.plan is None or not self.run_id:

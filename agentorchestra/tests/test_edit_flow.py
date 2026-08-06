@@ -178,7 +178,7 @@ def test_flow_accepts_and_promotes_css_edit(tmp_path):
     request = EditRequest(target_page="index.html", instruction="Change CSS.")
     report = flow.kickoff(inputs={"request": request.model_dump(mode="json")})
 
-    assert report.status == "accepted"
+    assert report.status == "accepted", report.error
     assert report.working_updated is True
     assert report.staging_cleaned is True
     assert qa.calls
@@ -333,7 +333,7 @@ def test_flow_accepts_committed_content_with_staging_cleanup_warning(tmp_path):
         promotion_service=promotion_with_warning,
     ).kickoff(inputs={"request": {"target_page": "index.html", "instruction": "Change CSS."}})
 
-    assert report.status == "accepted"
+    assert report.status == "accepted", report.error
     assert report.promotion_status == "committed_with_warning"
     assert report.working_updated is True
     assert report.staging_cleaned is False

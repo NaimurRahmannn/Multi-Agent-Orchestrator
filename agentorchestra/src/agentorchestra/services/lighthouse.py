@@ -143,14 +143,17 @@ def _run_site_lighthouse(
                 shell=False,
             )
     except FileNotFoundError:
+        _remove_failed_report(output_path)
         return _failed(
             run_id, target_page, _elapsed_ms(started, clock), "Lighthouse is unavailable."
         )
     except subprocess.TimeoutExpired:
+        _remove_failed_report(output_path)
         return _failed(
             run_id, target_page, _elapsed_ms(started, clock), "Lighthouse SEO audit timed out."
         )
     except Exception:
+        _remove_failed_report(output_path)
         return _failed(
             run_id,
             target_page,
@@ -159,7 +162,8 @@ def _run_site_lighthouse(
         )
     latency_ms = _elapsed_ms(started, clock)
     try:
-        if completed.returncode != 0 and not output_path.is_file():
+        if completed.returncode != 0:
+            _remove_failed_report(output_path)
             return _failed(
                 run_id,
                 target_page,
@@ -175,6 +179,7 @@ def _run_site_lighthouse(
             latency_ms=latency_ms,
         )
     except Exception:
+        _remove_failed_report(output_path)
         return _failed(
             run_id,
             target_page,
@@ -257,6 +262,18 @@ def _failed(run_id: str, target_page: str, latency_ms: float, error: str) -> Lig
         latency_ms=float(max(0.0, latency_ms)),
         error=error,
     )
+
+
+def _remove_failed_report(output_path: Path) -> None:
+    """Best-effort removal that never replaces the original Lighthouse failure."""
+    try:
+        if output_path.is_symlink():
+            output_path.unlink(missing_ok=True)
+            return
+        if output_path.exists() and output_path.is_file():
+            output_path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _validate_target_page(value: str) -> str:

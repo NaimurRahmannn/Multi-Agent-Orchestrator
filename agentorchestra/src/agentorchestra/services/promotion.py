@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gc
 import shutil
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -67,7 +69,7 @@ def promote_staged_copy(
     _require_available(backup)
 
     try:
-        copytree(handle.path, candidate, symlinks=False)
+        _copytree_with_transient_retry(handle.path, candidate, copytree, rmtree)
         validate_site_structure(candidate)
         candidate_digest = digest_function(candidate)
         if candidate_digest != staged:
@@ -76,13 +78,26 @@ def promote_staged_copy(
         _best_effort_remove(candidate, rmtree)
         if isinstance(exc, PromotionError):
             raise
-        raise PromotionError("Failed to prepare working-site promotion.") from exc
+        raise PromotionError(
+            f"Failed to prepare working-site promotion ({exc.__class__.__name__})."
+        ) from exc
 
     old_working_moved = False
+    gc.collect()
     try:
-        renamer(working, backup)
+        _rename_with_transient_retry(
+            working,
+            backup,
+            renamer,
+            retry_permission=rename_path is None,
+        )
         old_working_moved = True
-        renamer(candidate, working)
+        _rename_with_transient_retry(
+            candidate,
+            working,
+            renamer,
+            retry_permission=rename_path is None,
+        )
         validate_site_structure(working)
         final_working = digest_function(working)
         if final_working != staged:
@@ -90,7 +105,9 @@ def promote_staged_copy(
     except Exception as exc:
         if not old_working_moved:
             _best_effort_remove(candidate, rmtree)
-            raise PromotionError("Failed to prepare working-site promotion.") from exc
+            raise PromotionError(
+                f"Failed to prepare working-site promotion ({exc.__class__.__name__})."
+            ) from exc
         _restore_working_or_raise(
             working=working,
             backup=backup,
@@ -100,6 +117,7 @@ def promote_staged_copy(
             rmtree=rmtree,
             digest_function=digest_function,
             operation="Promotion",
+            retry_permission=rename_path is None,
         )
         _best_effort_remove(candidate, rmtree)
         raise PromotionError(
@@ -170,7 +188,7 @@ def reset_working_from_fixture(
     _require_available(backup)
 
     try:
-        copytree(fixture, candidate, symlinks=False)
+        _copytree_with_transient_retry(fixture, candidate, copytree, rmtree)
         validate_site_structure(candidate)
         if digest_function(candidate) != fixture_digest:
             raise PromotionError("Reset candidate does not match fixture content.")
@@ -181,10 +199,21 @@ def reset_working_from_fixture(
         raise PromotionError("Failed to prepare demo-site reset.") from exc
 
     old_working_moved = False
+    gc.collect()
     try:
-        renamer(working, backup)
+        _rename_with_transient_retry(
+            working,
+            backup,
+            renamer,
+            retry_permission=rename_path is None,
+        )
         old_working_moved = True
-        renamer(candidate, working)
+        _rename_with_transient_retry(
+            candidate,
+            working,
+            renamer,
+            retry_permission=rename_path is None,
+        )
         validate_site_structure(working)
         final_working = digest_function(working)
         if final_working != fixture_digest:
@@ -202,6 +231,7 @@ def reset_working_from_fixture(
             rmtree=rmtree,
             digest_function=digest_function,
             operation="Reset",
+            retry_permission=rename_path is None,
         )
         _best_effort_remove(candidate, rmtree)
         raise PromotionError(
@@ -252,13 +282,19 @@ def _restore_working_or_raise(
     rmtree: RemoveTree,
     digest_function: DigestFunction,
     operation: str,
+    retry_permission: bool,
 ) -> None:
     try:
         if working.exists() or working.is_symlink():
             _remove_managed_directory(working, rmtree)
         if not backup.is_dir() or backup.is_symlink():
             raise PromotionError("Working-site backup is unavailable for restoration.")
-        renamer(backup, working)
+        _rename_with_transient_retry(
+            backup,
+            working,
+            renamer,
+            retry_permission=retry_permission,
+        )
         validate_site_structure(working)
         if digest_function(working) != expected:
             raise PromotionError("Restored working site does not match its original content.")
@@ -267,6 +303,52 @@ def _restore_working_or_raise(
             f"{operation} failed and the original working site could not be restored safely.",
             recovery_paths=_recovery_identifiers(working, backup, candidate),
         ) from rollback_exc
+
+
+def _copytree_with_transient_retry(
+    source: Path,
+    destination: Path,
+    copytree: CopyTree,
+    rmtree: RemoveTree,
+) -> object:
+    """Retry short-lived Windows file locks without weakening transaction checks."""
+    for attempt in range(3):
+        try:
+            return copytree(source, destination, symlinks=False)
+        except PermissionError:
+            if (destination.exists() or destination.is_symlink()) and not _best_effort_remove(
+                destination, rmtree
+            ):
+                raise
+            if attempt == 2:
+                raise
+            time.sleep(0.02 * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
+def _rename_with_transient_retry(
+    source: Path,
+    destination: Path,
+    renamer: RenamePath,
+    *,
+    retry_permission: bool,
+) -> object:
+    for attempt in range(5):
+        try:
+            return renamer(source, destination)
+        except PermissionError:
+            if not source.exists() and destination.exists():
+                return None
+            if (
+                not retry_permission
+                or not source.exists()
+                or destination.exists()
+                or attempt == 4
+            ):
+                raise
+            gc.collect()
+            time.sleep(0.05 * (attempt + 1))
+    raise AssertionError("unreachable")
 
 
 def _temporary_site_path(settings: Settings, name: str) -> Path:

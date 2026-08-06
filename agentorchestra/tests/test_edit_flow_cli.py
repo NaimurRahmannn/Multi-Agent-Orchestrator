@@ -209,6 +209,7 @@ def test_edit_flow_cli_prints_seo_edit_audit_patch_and_qa_evidence(tmp_path, cap
     from tests.test_seo_flow import run_flow
 
     settings, _, seo_report = run_flow(tmp_path / "flow", verdict="accept")
+    assert seo_report.status == "accepted", seo_report.error
     code = run_edit_flow.main(
         ["--target-page", "index.html", "--instruction", "Improve SEO.", "--apply"],
         settings=settings,

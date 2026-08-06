@@ -1,3 +1,4 @@
+from agentorchestra.prompts.seo import SEO_EDIT_RULES
 from agentorchestra.prompts.specialists import (
     CSS_OWNERSHIP_PROMPT,
     HTML_OWNERSHIP_PROMPT,
@@ -5,7 +6,6 @@ from agentorchestra.prompts.specialists import (
     SPECIALIST_TASK_EXPECTED_OUTPUT,
     build_specialist_task_description,
 )
-from agentorchestra.prompts.seo import SEO_EDIT_RULES
 from tests.specialist_helpers import execute_plan, request
 
 
