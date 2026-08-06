@@ -86,7 +86,7 @@ def _render_timeline(report: EditRunReport) -> None:
     st.subheader("Execution timeline")
     rows = build_timeline_rows(report)
     if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.dataframe(rows, width="stretch", hide_index=True)
     else:
         st.caption("No timeline evidence is available for this legacy report.")
 
@@ -117,7 +117,7 @@ def _render_one_screenshot(column, label, artifact, settings) -> None:
     if artifact.status is ScreenshotStatus.SUCCEEDED:
         image = resolve_screenshot_for_display(settings, artifact)
         if image is not None:
-            column.image(image, use_container_width=True)
+            column.image(image, width="stretch")
         else:
             column.warning("The screenshot artifact is no longer safe or available.")
     elif artifact.status is ScreenshotStatus.FAILED:
@@ -130,18 +130,18 @@ def _render_specialists(report: EditRunReport) -> None:
     st.subheader("Specialist execution")
     rows = build_specialist_rows(report)
     if rows:
-        st.dataframe(rows, use_container_width=True, hide_index=True)
+        st.dataframe(rows, width="stretch", hide_index=True)
     else:
         st.caption("No specialists ran.")
     patches = build_patch_rows(report)
     if patches:
         st.markdown("#### Patch evidence")
-        st.dataframe(patches, use_container_width=True, hide_index=True)
+        st.dataframe(patches, width="stretch", hide_index=True)
     if report.seo_diagnostic_report is not None:
         st.markdown("#### SEO findings")
         st.dataframe(
             [item.model_dump(mode="json") for item in report.seo_diagnostic_report.findings],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
@@ -171,7 +171,7 @@ def _render_lighthouse(report: EditRunReport) -> None:
     if audit.audits:
         st.dataframe(
             [item.model_dump(mode="json") for item in audit.audits],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
     if audit.error:
@@ -193,7 +193,7 @@ def _render_qa(report: EditRunReport) -> None:
             "token_usage": report.qa_run.token_usage.model_dump(mode="json"),
         }
     )
-    st.dataframe(build_qa_rows(report), use_container_width=True, hide_index=True)
+    st.dataframe(build_qa_rows(report), width="stretch", hide_index=True)
 
 
 def _render_metrics(report: EditRunReport) -> None:

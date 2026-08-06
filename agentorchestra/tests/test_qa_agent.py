@@ -39,7 +39,10 @@ def test_qa_task_requests_strict_qa_result():
 
     assert task.agent is agent
     assert task.tools == []
-    assert task.output_pydantic.__name__ == "QAResult"
+    # Keep structured validation local in extract_qa_result. CrewAI's LiteLLM
+    # output converter performs a second request without forwarding the
+    # role-specific API key.
+    assert task.output_pydantic is None
     assert task.max_retries == 0
     assert task.guardrail_max_retries == 0
     assert "Preserve Manager criterion wording exactly" in task.description

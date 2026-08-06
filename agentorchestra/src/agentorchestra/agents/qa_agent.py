@@ -4,7 +4,6 @@ from typing import Any
 
 from agentorchestra.agents.manager import crewai_model_name, localize_crewai_paths
 from agentorchestra.config import GroqAgentName, GroqConfiguration, Settings, get_settings
-from agentorchestra.models import QAResult
 from agentorchestra.pipeline_models import QAEvidenceBundle
 from agentorchestra.prompts.qa import (
     QA_AGENT_BACKSTORY,
@@ -72,7 +71,6 @@ def build_qa_task(*, agent: Any, evidence: QAEvidenceBundle) -> Any:
         expected_output=QA_TASK_EXPECTED_OUTPUT,
         agent=agent,
         tools=[],
-        output_pydantic=QAResult,
         async_execution=False,
         human_input=False,
         markdown=False,
