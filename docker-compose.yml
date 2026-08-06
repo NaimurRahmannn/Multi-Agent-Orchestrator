@@ -1,0 +1,25 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agentorchestra:latest
+    env_file:
+      - agentorchestra/.env
+    environment:
+      AGENTORCHESTRA_ROOT: /workspace/agentorchestra
+    ports:
+      - "8501:8501"
+
+  verify:
+    image: agentorchestra:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles:
+      - verify
+    env_file:
+      - agentorchestra/.env
+    environment:
+      AGENTORCHESTRA_ROOT: /workspace/agentorchestra
+    command: ["uv", "run", "python", "scripts/verify_clean_install.py", "--check"]

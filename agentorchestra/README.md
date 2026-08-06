@@ -72,6 +72,28 @@ uv run python scripts/run_ui.py
 
 On PowerShell, copy the environment template with `Copy-Item .env.example .env`.
 
+## Docker
+
+Build the image from the repository root:
+
+```bash
+docker build -t agentorchestra -f Dockerfile .
+```
+
+Run the Streamlit UI on port `8501`:
+
+```bash
+docker compose up --build app
+```
+
+Run the isolated clean-install verifier inside the image:
+
+```bash
+docker compose --profile verify run --rm verify
+```
+
+The container expects the same `agentorchestra/.env` file you would use locally.
+
 ## Environment variables
 
 | Role or setting | Variables |
