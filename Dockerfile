@@ -33,10 +33,21 @@ RUN npm ci --prefix /workspace/agentorchestra
 RUN uv sync --frozen --no-dev --project /workspace/agentorchestra
 RUN uv run --project /workspace/agentorchestra playwright install chromium
 
+# ... existing content stays the same ...
+
 COPY agentorchestra/ ./agentorchestra/
 
 WORKDIR /workspace/agentorchestra
 
+# --- ADD THIS BLOCK ---
+ARG UID=1000
+ARG GID=1000
+RUN groupadd -g ${GID} appuser && \
+    useradd -m -u ${UID} -g ${GID} appuser && \
+    chown -R appuser:appuser /workspace
+USER appuser
+# --- END BLOCK ---
+
 EXPOSE 8501
 
-CMD ["uv", "run", "python", "scripts/run_ui.py"]
+CMD ["uv", "run", "--no-sync", "python", "scripts/run_ui.py"]

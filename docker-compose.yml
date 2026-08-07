@@ -3,14 +3,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
     image: agentorchestra:latest
+    volumes:
+      - ./agentorchestra/sites:/workspace/agentorchestra/sites
+      - ./agentorchestra/reports:/workspace/agentorchestra/reports
     env_file:
       - agentorchestra/.env
     environment:
       AGENTORCHESTRA_ROOT: /workspace/agentorchestra
     ports:
       - "8501:8501"
-
   verify:
     image: agentorchestra:latest
     build:
@@ -18,6 +23,9 @@ services:
       dockerfile: Dockerfile
     profiles:
       - verify
+    volumes:
+      - ./agentorchestra/sites:/workspace/agentorchestra/sites
+      - ./agentorchestra/reports:/workspace/agentorchestra/reports
     env_file:
       - agentorchestra/.env
     environment:
