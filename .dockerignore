@@ -16,7 +16,6 @@ agentorchestra/__pycache__
 agentorchestra/**/*.pyc
 agentorchestra/reports
 agentorchestra/sites/staging
-agentorchestra/sites/working
 agentorchestra-verify-*
 node_modules
 agentorchestra/node_modules
