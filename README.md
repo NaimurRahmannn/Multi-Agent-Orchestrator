@@ -1,6 +1,6 @@
 # Multi-Agent Orchestrator
 
-Multi-Agent Orchestrator is the repository wrapper for **AgentOrchestra**, a local multi-agent webpage editor for a committed static sample site. The application routes natural-language edit requests to specialist agents, validates proposed changes, and promotes only accepted work into the working site.
+AgentOrchestra is a local multi-agent webpage editor for the committed static sample site. It routes natural-language requests to HTML, CSS, and SEO specialists, validates staged changes with a tool-free QA agent, and promotes only accepted work.
 
 The main project lives in [`agentorchestra/`](agentorchestra/).
 
