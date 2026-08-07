@@ -42,6 +42,15 @@ def list_supported_target_pages(settings: Settings) -> tuple[str, ...]:
     return tuple(sorted(pages))
 
 
+def default_target_page(pages: tuple[str, ...]) -> str:
+    """Prefer the primary landing page when the UI needs an initial selection."""
+    if "index.html" in pages:
+        return "index.html"
+    if not pages:
+        raise ValueError("pages must not be empty.")
+    return pages[0]
+
+
 def check_runtime_readiness(
     settings: Settings,
     *,

@@ -12,6 +12,7 @@ from agentorchestra.pipeline_models import EditRunReport
 from agentorchestra.services.promotion import reset_working_from_fixture
 from agentorchestra.services.ui_support import (
     RuntimeReadiness,
+    default_target_page,
     check_runtime_readiness,
     list_supported_target_pages,
 )
@@ -40,7 +41,11 @@ def main(*, settings: Settings | None = None) -> None:
         st.error("The working sample site is unavailable or invalid.")
         return
 
-    target_page = st.selectbox("Target page", options=pages)
+    target_page = st.selectbox(
+        "Target page",
+        options=pages,
+        index=pages.index(default_target_page(pages)),
+    )
     instruction = st.text_area("Edit instruction", height=120)
     confirmed = st.checkbox(
         "I understand Groq, Lighthouse, and Playwright may run, and accepted edits update sites/working."

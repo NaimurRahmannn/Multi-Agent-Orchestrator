@@ -2,6 +2,7 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 from agentorchestra.services.ui_support import (
+    default_target_page,
     check_runtime_readiness,
     list_supported_target_pages,
 )
@@ -11,6 +12,14 @@ from tests.test_workspace_service import make_settings
 def test_supported_target_pages_are_safe_top_level_and_sorted(tmp_path):
     settings = make_settings(tmp_path)
     assert list_supported_target_pages(settings) == ("about.html", "contact.html", "index.html")
+
+
+def test_default_target_page_prefers_index_when_available():
+    assert default_target_page(("about.html", "contact.html", "index.html")) == "index.html"
+
+
+def test_default_target_page_falls_back_to_first_entry():
+    assert default_target_page(("about.html", "contact.html")) == "about.html"
 
 
 def test_readiness_uses_booleans_without_browser_launch_or_keys(tmp_path):
