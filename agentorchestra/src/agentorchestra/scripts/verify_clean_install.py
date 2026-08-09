@@ -98,6 +98,41 @@ def _mermaid_fences_closed(text: str) -> bool:
     return not in_mermaid
 
 
+def _site_trees_match(first: Path, second: Path) -> bool:
+    """Return whether two non-symlink directory trees have identical entries and bytes."""
+    try:
+        if (
+            first.is_symlink()
+            or second.is_symlink()
+            or not first.is_dir()
+            or not second.is_dir()
+        ):
+            return False
+        first_entries = {
+            path.relative_to(first): "directory" if path.is_dir() else "file"
+            for path in first.rglob("*")
+            if not path.is_symlink() and (path.is_dir() or path.is_file())
+        }
+        second_entries = {
+            path.relative_to(second): "directory" if path.is_dir() else "file"
+            for path in second.rglob("*")
+            if not path.is_symlink() and (path.is_dir() or path.is_file())
+        }
+        if first_entries != second_entries:
+            return False
+        if any(path.is_symlink() for path in first.rglob("*")) or any(
+            path.is_symlink() for path in second.rglob("*")
+        ):
+            return False
+        return all(
+            (first / relative).read_bytes() == (second / relative).read_bytes()
+            for relative, entry_type in first_entries.items()
+            if entry_type == "file"
+        )
+    except OSError:
+        return False
+
+
 def offline_checks(root: Path) -> list[tuple[str, bool, str]]:
     checks: list[tuple[str, bool, str]] = []
     missing = sorted(path for path in REQUIRED_FILES if not (root / path).is_file())
@@ -140,9 +175,19 @@ def offline_checks(root: Path) -> list[tuple[str, bool, str]]:
     ignore_text = (root / ".gitignore").read_text(encoding="utf-8")
     ignore_ok = all(value in ignore_text for value in (".env", "node_modules/", "reports/lighthouse/*", "sites/staging/*"))
     checks.append(("generated-file ignores", ignore_ok, "configured" if ignore_ok else "incomplete"))
-    fixture_ok = all((root / "sites/fixture" / name).is_file() for name in ("index.html", "about.html", "contact.html", "style.css"))
-    working_ok = all((root / "sites/working" / name).is_file() for name in ("index.html", "about.html", "contact.html", "style.css"))
+    fixture_root = root / "sites" / "fixture"
+    working_root = root / "sites" / "working"
+    fixture_ok = all((fixture_root / name).is_file() for name in ("index.html", "about.html", "contact.html", "style.css"))
+    working_ok = all((working_root / name).is_file() for name in ("index.html", "about.html", "contact.html", "style.css"))
     checks.append(("sample-site structure", fixture_ok and working_ok, "valid" if fixture_ok and working_ok else "invalid"))
+    baseline_ok = fixture_ok and working_ok and _site_trees_match(fixture_root, working_root)
+    checks.append(
+        (
+            "sample-site baseline",
+            baseline_ok,
+            "working matches fixture" if baseline_ok else "working differs from fixture",
+        )
+    )
     return checks
 
 

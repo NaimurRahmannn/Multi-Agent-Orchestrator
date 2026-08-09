@@ -38,6 +38,28 @@ def test_offline_checks_validate_current_repository_without_network():
     assert all(passed for _, passed, _ in checks), checks
 
 
+def test_offline_checks_reject_working_tree_that_differs_from_fixture(tmp_path):
+    root = tmp_path / "repository"
+    fixture = root / "sites" / "fixture"
+    working = root / "sites" / "working"
+    fixture.mkdir(parents=True)
+    working.mkdir(parents=True)
+    (root / ".gitignore").write_text(
+        ".env\nnode_modules/\nreports/lighthouse/*\nsites/staging/*\n",
+        encoding="utf-8",
+    )
+    for name in ("index.html", "about.html", "contact.html", "style.css"):
+        (fixture / name).write_text(f"fixture {name}", encoding="utf-8")
+        (working / name).write_text(f"fixture {name}", encoding="utf-8")
+
+    matching = {name: passed for name, passed, _ in verify_clean_install.offline_checks(root)}
+    assert matching["sample-site baseline"] is True
+
+    (working / "index.html").write_text("committed drift", encoding="utf-8")
+    mismatched = {name: passed for name, passed, _ in verify_clean_install.offline_checks(root)}
+    assert mismatched["sample-site baseline"] is False
+
+
 def test_full_mode_requires_apply_before_copy_or_subprocess(tmp_path):
     calls = []
 
