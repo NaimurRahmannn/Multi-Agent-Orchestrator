@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
     PIP_NO_CACHE_DIR=1 \
     AGENTORCHESTRA_ROOT=/workspace/agentorchestra \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     STREAMLIT_SERVER_ADDRESS=0.0.0.0 \
     STREAMLIT_SERVER_PORT=8501 \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
@@ -31,7 +32,8 @@ COPY agentorchestra/src ./agentorchestra/src
 RUN npm ci
 RUN npm ci --prefix /workspace/agentorchestra
 RUN uv sync --frozen --no-dev --project /workspace/agentorchestra
-RUN uv run --project /workspace/agentorchestra playwright install chromium
+RUN uv run --project /workspace/agentorchestra playwright install chromium \
+    && chmod -R a+rX "${PLAYWRIGHT_BROWSERS_PATH}"
 
 # ... existing content stays the same ...
 
