@@ -10,9 +10,9 @@ The main project lives in [`agentorchestra/`](agentorchestra/).
 .
 ├── Dockerfile
 ├── docker-compose.yml
-├── package.json
 └── agentorchestra/
     ├── README.md
+    ├── package.json
     ├── pyproject.toml
     ├── docs/
     ├── scripts/
@@ -61,6 +61,8 @@ docker compose up --build app
 ```
 
 The container uses `agentorchestra/.env` and serves the UI on `http://localhost:8501`.
+It installs one Lighthouse dependency tree under `agentorchestra/` and reuses
+Playwright's Chromium browser for Lighthouse through `CHROME_PATH`.
 
 To run the clean-install verifier inside Docker:
 

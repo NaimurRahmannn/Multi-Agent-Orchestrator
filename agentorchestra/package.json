@@ -2,8 +2,8 @@
   "name": "agentorchestra",
   "version": "0.1.0",
   "private": true,
-  "description": "Feasibility checks for AgentOrchestra",
-  "devDependencies": {
-    "lighthouse": "^12.8.0"
+  "description": "Node runtime dependencies for AgentOrchestra",
+  "dependencies": {
+    "lighthouse": "12.8.2"
   }
 }

@@ -25,12 +25,12 @@ def completion(status="completed"):
     )
 
 
-def fake_agent_factory(specialist, recorder_ids=None, expected_model="test-model"):
+def fake_agent_factory(specialist, recorder_instances=None, expected_model="test-model"):
     def factory(*, workspace, target_page, recorder, groq, verbose, mode=None):
         assert groq.model == expected_model
         assert verbose is False
-        if recorder_ids is not None:
-            recorder_ids.append(id(recorder))
+        if recorder_instances is not None:
+            recorder_instances.append(recorder)
         read_scope = (
             (target_page,)
             if specialist in {SpecialistName.HTML, SpecialistName.SEO}
@@ -60,10 +60,10 @@ def fake_task_factory(**kwargs):
     return SimpleNamespace(**kwargs)
 
 
-def make_runner(specialist, executor, *, clock=None, recorder_ids=None):
+def make_runner(specialist, executor, *, clock=None, recorder_instances=None):
     return SpecialistRunner(
         groq=GroqConfiguration(api_key="unit-test-secret", model="test-model"),
-        agent_factories={specialist: fake_agent_factory(specialist, recorder_ids)},
+        agent_factories={specialist: fake_agent_factory(specialist, recorder_instances)},
         task_factories={specialist: fake_task_factory},
         crew_factory=lambda agent, task: SimpleNamespace(agent=agent, task=task),
         crew_executor=executor,
@@ -274,16 +274,21 @@ def test_latency_token_usage_and_absent_usage_are_normalized(tmp_path):
 
 def test_one_recorder_is_created_per_run(tmp_path):
     settings = make_settings(tmp_path)
-    ids = []
-    runner = make_runner(SpecialistName.CSS, apply_css, recorder_ids=ids, clock=lambda: 1.0)
+    recorders = []
+    runner = make_runner(
+        SpecialistName.CSS,
+        apply_css,
+        recorder_instances=recorders,
+        clock=lambda: 1.0,
+    )
     first = create_staged_copy(settings=settings, run_id_factory=lambda: "runner-recorder-one")
     second = create_staged_copy(settings=settings, run_id_factory=lambda: "runner-recorder-two")
 
     run(runner, first)
     run(runner, second)
 
-    assert len(ids) == 2
-    assert ids[0] != ids[1]
+    assert len(recorders) == 2
+    assert recorders[0] is not recorders[1]
 
 
 @pytest.mark.parametrize(

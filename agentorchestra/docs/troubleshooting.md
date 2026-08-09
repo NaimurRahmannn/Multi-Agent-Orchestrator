@@ -29,7 +29,8 @@ Never paste keys into logs or issue text.
 
 - **`npx --no-install lighthouse` unavailable:** run `npm ci` in the application root and check `npx --no-install lighthouse --version`.
 - **Missing `node_modules`:** restore it with `npm ci`; do not commit it.
-- **Missing Chrome:** install Chrome/Chromium. Playwright’s browser primarily serves screenshots and may not be the executable Lighthouse discovers.
+- **Missing Chrome:** locally, install Chrome/Chromium or set `CHROME_PATH` to a compatible
+  executable. Docker sets `CHROME_PATH` to its Playwright-managed Chromium automatically.
 - **Timeout:** close orphaned browser processes, confirm the page is locally servable, and retry.
 - **Malformed/missing report:** the audit fails closed and QA does not run for an SEO edit.
 - **Windows report cleanup error:** Chrome may temporarily lock its profile after writing a report. AgentOrchestra accepts only a complete schema-valid report; missing/malformed evidence still fails.
