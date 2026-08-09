@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from agentorchestra.models import (
+    CSS_EDIT_REQUEST_TYPE,
+    HTML_CSS_EDIT_REQUEST_TYPE,
+    HTML_EDIT_REQUEST_TYPE,
     SEO_EDIT_REQUEST_TYPE,
     EditRequest,
     ManagerRoutingPlan,
@@ -59,11 +62,19 @@ def rejected_patch(
 
 def execute_plan(*specialists: SpecialistName | str) -> ManagerRoutingPlan:
     selected = [SpecialistName(item) for item in specialists] or [SpecialistName.CSS]
+    selected_set = set(selected)
+    request_type = (
+        SEO_EDIT_REQUEST_TYPE
+        if SpecialistName.SEO in selected_set
+        else HTML_CSS_EDIT_REQUEST_TYPE
+        if selected_set == {SpecialistName.HTML, SpecialistName.CSS}
+        else HTML_EDIT_REQUEST_TYPE
+        if selected_set == {SpecialistName.HTML}
+        else CSS_EDIT_REQUEST_TYPE
+    )
     return ManagerRoutingPlan(
         status="execute",
-        request_type=(
-            SEO_EDIT_REQUEST_TYPE if SpecialistName.SEO in selected else "specialist_test"
-        ),
+        request_type=request_type,
         selected_specialists=selected,
         routing_rationale="Each task follows specialist ownership.",
         assignments=[

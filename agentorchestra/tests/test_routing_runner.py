@@ -32,9 +32,19 @@ def plan_payload(status="execute", specialists=None):
             "clarification_question": None,
             "rejection_reason": "Backend work is not supported.",
         }
+    selected = set(specialists)
+    request_type = (
+        "seo_edit"
+        if "seo" in selected
+        else "html_css_edit"
+        if selected == {"html", "css"}
+        else "html_edit"
+        if selected == {"html"}
+        else "css_edit"
+    )
     return {
         "status": status,
-        "request_type": "route",
+        "request_type": request_type,
         "selected_specialists": specialists,
         "routing_rationale": "Routed by ownership.",
         "assignments": [

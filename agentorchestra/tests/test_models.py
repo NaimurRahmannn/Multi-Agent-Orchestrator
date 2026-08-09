@@ -9,7 +9,7 @@ from agentorchestra.models import ManagerRoutingPlan
 def execute_plan(**overrides):
     payload = {
         "status": "execute",
-        "request_type": "css_change",
+        "request_type": "css_edit",
         "selected_specialists": ["css"],
         "routing_rationale": "This is a presentation-only change.",
         "assignments": [{"agent": "css", "task": "Update button color."}],
@@ -63,9 +63,22 @@ def test_execute_valid_plan():
     assert plan.selected_specialists == ["css"]
 
 
+def test_execute_request_type_must_match_selected_specialists():
+    assert_invalid(execute_plan(request_type="invented_edit"))
+    html = ManagerRoutingPlan.model_validate(
+        execute_plan(
+            request_type="html_edit",
+            selected_specialists=["html"],
+            assignments=[{"agent": "html", "task": "Add a label."}],
+        )
+    )
+    assert html.request_type == "html_edit"
+
+
 def test_execute_valid_multi_specialist_plan_normalizes_assignment_order():
     plan = ManagerRoutingPlan.model_validate(
         execute_plan(
+            request_type="html_css_edit",
             selected_specialists=["html", "css"],
             assignments=[
                 {"agent": "css", "task": "Style the note."},
@@ -176,6 +189,7 @@ def test_extra_unknown_fields_rejected():
 def test_json_round_trip_is_clean():
     plan = ManagerRoutingPlan.model_validate(
         execute_plan(
+            request_type="html_css_edit",
             selected_specialists=["html", "css"],
             assignments=[
                 {"agent": "html", "task": "Add a note."},

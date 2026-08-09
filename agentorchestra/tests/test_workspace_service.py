@@ -209,6 +209,113 @@ def test_propose_patch_rejects_zero_multiple_noop_and_wrong_owner(tmp_path):
 
 
 @pytest.mark.parametrize(
+    ("specialist", "file", "old_text", "new_text"),
+    [
+        (
+            SpecialistName.HTML,
+            "index.html",
+            "  <title>Home</title>",
+            "  <title>Rewritten by HTML</title>",
+        ),
+        (
+            SpecialistName.HTML,
+            "index.html",
+            "  <h1>Home</h1>",
+            '  <h1 onclick="alert(1)">Home</h1>',
+        ),
+        (
+            SpecialistName.HTML,
+            "index.html",
+            "</body>",
+            "  <script>alert(1)</script>\n</body>",
+        ),
+        (
+            SpecialistName.HTML,
+            "index.html",
+            "  <h1>Home</h1>",
+            '  <h1 style="font-size: 4rem">Home</h1>',
+        ),
+        (
+            SpecialistName.SEO,
+            "index.html",
+            "  <h1>Home</h1>",
+            "  <h1>SEO rewrote body copy</h1>",
+        ),
+        (
+            SpecialistName.CSS,
+            "style.css",
+            ":root {",
+            '@import url("https://example.com/theme.css");\n:root {',
+        ),
+        (
+            SpecialistName.CSS,
+            "style.css",
+            "  background: var(--accent);",
+            '  background: url("https://example.com/image.png");',
+        ),
+    ],
+)
+def test_propose_patch_rejects_cross_ownership_and_active_content(
+    tmp_path,
+    specialist,
+    file,
+    old_text,
+    new_text,
+):
+    settings = make_settings(tmp_path)
+    handle = create_staged_copy(settings=settings, run_id_factory=lambda: "ownership-policy")
+    before = (handle.path / file).read_bytes()
+
+    result = propose_patch(
+        handle,
+        specialist=specialist,
+        file=file,
+        old_text=old_text,
+        new_text=new_text,
+        summary="Attempt a cross-ownership edit.",
+    )
+
+    assert result.status is PatchStatus.REJECTED
+    assert result.rejection_reason is PatchRejectionReason.OWNERSHIP_VIOLATION
+    assert result.replacements == 0
+    assert (handle.path / file).read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    ("old_text", "new_text"),
+    [
+        (
+            "  <title>Home</title>",
+            "  <title>Harbor Light Web Design</title>",
+        ),
+        (
+            "</head>",
+            '  <meta name="description" content="Small static websites.">\n</head>',
+        ),
+        (
+            "  <h1>Home</h1>",
+            "  <h2>Home</h2>",
+        ),
+    ],
+)
+def test_propose_patch_allows_supported_seo_changes(tmp_path, old_text, new_text):
+    settings = make_settings(tmp_path)
+    handle = create_staged_copy(settings=settings, run_id_factory=lambda: "seo-policy")
+
+    result = propose_patch(
+        handle,
+        specialist=SpecialistName.SEO,
+        file="index.html",
+        old_text=old_text,
+        new_text=new_text,
+        summary="Apply a supported SEO edit.",
+    )
+
+    assert result.status is PatchStatus.APPLIED
+    assert result.rejection_reason is None
+
+
+@pytest.mark.parametrize(
     ("file", "reason"),
     [
         ("missing.css", PatchRejectionReason.FILE_NOT_FOUND),

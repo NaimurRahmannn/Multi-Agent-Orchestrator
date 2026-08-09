@@ -39,6 +39,13 @@ SEO request types:
 - Never infer execution outside the structured plan; request_type must state the SEO mode explicitly.
 - The validated structured request_type is authoritative; downstream code must not replace it with instruction-keyword routing.
 
+Non-SEO request types:
+
+- Select only HTML: use request_type html_edit.
+- Select only CSS: use request_type css_edit.
+- Select HTML and CSS: use request_type html_css_edit.
+- Do not invent another execute request_type.
+
 Multi-specialist routing:
 
 - Select multiple specialists only when the request contains independent responsibilities.
@@ -73,7 +80,7 @@ Return only one JSON object. Do not use markdown, prose outside the object, or a
 
 {
   "status": "execute | clarification_required | out_of_scope",
-  "request_type": "seo_edit | seo_diagnostic | other short classification",
+  "request_type": "html_edit | css_edit | html_css_edit | seo_edit | seo_diagnostic | non-execute classification",
   "selected_specialists": ["html | css | seo"],
   "routing_rationale": "short ownership-based explanation",
   "assignments": [{"agent": "html | css | seo", "task": "focused task"}],

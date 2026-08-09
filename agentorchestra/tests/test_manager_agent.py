@@ -59,7 +59,7 @@ def test_llm_construction_is_deferred_until_route(monkeypatch):
         crew_factory=fake_factory,
         crew_executor=lambda crew, inputs: {
             "status": "execute",
-            "request_type": "css_change",
+            "request_type": "css_edit",
             "selected_specialists": ["css"],
             "routing_rationale": "CSS owns presentation changes.",
             "assignments": [{"agent": "css", "task": "Change button color."}],
@@ -89,7 +89,7 @@ def test_manager_router_selects_only_manager_credentials_from_settings():
         crew_factory=lambda groq: captured.append(groq) or object(),
         crew_executor=lambda crew, inputs: {
             "status": "execute",
-            "request_type": "css_change",
+            "request_type": "css_edit",
             "selected_specialists": ["css"],
             "routing_rationale": "CSS owns presentation changes.",
             "assignments": [{"agent": "css", "task": "Change button color."}],

@@ -28,6 +28,9 @@ MAX_EVIDENCE_LENGTH = 1_000
 MAX_REASON_LENGTH = 1_000
 SEO_EDIT_REQUEST_TYPE = "seo_edit"
 SEO_DIAGNOSTIC_REQUEST_TYPE = "seo_diagnostic"
+HTML_EDIT_REQUEST_TYPE = "html_edit"
+CSS_EDIT_REQUEST_TYPE = "css_edit"
+HTML_CSS_EDIT_REQUEST_TYPE = "html_css_edit"
 
 
 class AgentOrchestraModel(BaseModel):
@@ -134,18 +137,23 @@ class ManagerRoutingPlan(AgentOrchestraModel):
         if self.rejection_reason:
             raise ValueError("execute plans must not include a rejection reason.")
         seo_selected = SpecialistName.SEO in self.selected_specialists
-        seo_request = self.request_type in {
-            SEO_EDIT_REQUEST_TYPE,
-            SEO_DIAGNOSTIC_REQUEST_TYPE,
-        }
-        if seo_selected and not seo_request:
-            raise ValueError("SEO plans must use request_type seo_edit or seo_diagnostic.")
-        if seo_request and not seo_selected:
-            raise ValueError("SEO request types must select the SEO specialist.")
         if self.request_type == SEO_DIAGNOSTIC_REQUEST_TYPE and self.selected_specialists != [
             SpecialistName.SEO
         ]:
             raise ValueError("seo_diagnostic plans must select only the SEO specialist.")
+        expected_request_type = _expected_execute_request_type(
+            self.selected_specialists,
+            requested=self.request_type,
+        )
+        if self.request_type != expected_request_type:
+            raise ValueError(
+                "execute request_type must match the selected specialist ownership."
+            )
+        if seo_selected and self.request_type not in {
+            SEO_EDIT_REQUEST_TYPE,
+            SEO_DIAGNOSTIC_REQUEST_TYPE,
+        }:
+            raise ValueError("SEO plans must use request_type seo_edit or seo_diagnostic.")
 
     def _validate_clarification_required(self) -> None:
         if self.selected_specialists or self.assignments or self.acceptance_criteria:
@@ -380,6 +388,27 @@ def evaluate_routing_match(case: RoutingEvidenceCase, plan: ManagerRoutingPlan) 
     return case.expected_status == plan.status and set(case.expected_specialists) == set(
         plan.selected_specialists
     )
+
+
+def _expected_execute_request_type(
+    specialists: Sequence[SpecialistName],
+    *,
+    requested: str,
+) -> str:
+    selected = set(specialists)
+    if SpecialistName.SEO in selected:
+        return (
+            SEO_DIAGNOSTIC_REQUEST_TYPE
+            if requested == SEO_DIAGNOSTIC_REQUEST_TYPE
+            else SEO_EDIT_REQUEST_TYPE
+        )
+    if selected == {SpecialistName.HTML}:
+        return HTML_EDIT_REQUEST_TYPE
+    if selected == {SpecialistName.CSS}:
+        return CSS_EDIT_REQUEST_TYPE
+    if selected == {SpecialistName.HTML, SpecialistName.CSS}:
+        return HTML_CSS_EDIT_REQUEST_TYPE
+    raise ValueError("execute plans contain an unsupported specialist combination.")
 
 
 def validate_qa_coverage(

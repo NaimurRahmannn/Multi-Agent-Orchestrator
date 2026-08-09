@@ -24,7 +24,7 @@ def execute_case(**overrides):
 def execute_plan(**overrides):
     payload = {
         "status": "execute",
-        "request_type": "css_change",
+        "request_type": "css_edit",
         "selected_specialists": ["css"],
         "routing_rationale": "CSS owns presentation changes.",
         "assignments": [{"agent": "css", "task": "Change button color."}],
@@ -139,6 +139,7 @@ def test_evaluate_routing_match_exact_and_order_insensitive():
         execute_case(expected_specialists=["html", "css"])
     )
     plan = execute_plan(
+        request_type="html_css_edit",
         selected_specialists=["css", "html"],
         assignments=[
             {"agent": "html", "task": "Add note."},
@@ -167,9 +168,10 @@ def test_evaluate_routing_match_wrong_status_or_specialists():
 
     assert not evaluate_routing_match(case, out_of_scope_plan)
     assert not evaluate_routing_match(
-        case,
-        execute_plan(
-            selected_specialists=["html"],
+            case,
+            execute_plan(
+                request_type="html_edit",
+                selected_specialists=["html"],
             assignments=[{"agent": "html", "task": "Change markup."}],
         ),
     )

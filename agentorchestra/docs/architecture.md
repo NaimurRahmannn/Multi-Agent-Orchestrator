@@ -156,6 +156,8 @@ Screenshot failures normally become warnings and the transition continues; safet
 ## Security boundaries
 
 - Trusted code creates workspace handles, hides specialist identity, and binds allowed files.
+- A deterministic patch policy rejects active scripting, cross-owned HTML/SEO/presentation
+  changes, and CSS imports or active/external URL references before staged bytes are replaced.
 - LLM-visible tool arguments contain only validated relative file names, bounded ranges, and exact replacement text.
 - Absolute paths, traversal, unsupported extensions, structure drift, assets changes, and symlinks are rejected.
 - Manager, specialist, and QA keys/models are resolved independently with no role fallback.

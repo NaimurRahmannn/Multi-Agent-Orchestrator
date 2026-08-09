@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from agentorchestra.config import GroqAgentName, Settings, get_settings
 from agentorchestra.exceptions import AgentOrchestraError
 from agentorchestra.models import (
+    CSS_EDIT_REQUEST_TYPE,
+    HTML_EDIT_REQUEST_TYPE,
     SEO_DIAGNOSTIC_REQUEST_TYPE,
     SEO_EDIT_REQUEST_TYPE,
     EditRequest,
@@ -64,7 +66,9 @@ def main(
                 if mode is SEOExecutionMode.DIAGNOSTIC
                 else SEO_EDIT_REQUEST_TYPE
                 if specialist is SpecialistName.SEO
-                else f"manual_{specialist.value}_specialist"
+                else HTML_EDIT_REQUEST_TYPE
+                if specialist is SpecialistName.HTML
+                else CSS_EDIT_REQUEST_TYPE
             ),
             selected_specialists=[specialist],
             routing_rationale="Manual single-specialist preview selected by explicit CLI argument.",

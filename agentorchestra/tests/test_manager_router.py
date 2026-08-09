@@ -12,7 +12,7 @@ from agentorchestra.models import EditRequest, ManagerRoutingPlan
 def execute_payload(**overrides):
     payload = {
         "status": "execute",
-        "request_type": "css_change",
+        "request_type": "css_edit",
         "selected_specialists": ["css"],
         "routing_rationale": "CSS owns presentation changes.",
         "assignments": [{"agent": "css", "task": "Change button color."}],
@@ -54,6 +54,7 @@ def test_valid_execute_result():
 def test_valid_multi_specialist_result():
     result = router_for(
         execute_payload(
+            request_type="html_css_edit",
             selected_specialists=["html", "css"],
             assignments=[
                 {"agent": "html", "task": "Add alt text."},

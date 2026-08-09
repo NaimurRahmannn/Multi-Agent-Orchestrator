@@ -67,7 +67,7 @@ def test_run_case_uses_production_manager_router_once(monkeypatch):
             return ManagerRunResult(
                 request=request,
                 plan=MODULE._extract_plan(
-                    '{"status":"execute","request_type":"css_change",'
+                    '{"status":"execute","request_type":"css_edit",'
                     '"selected_specialists":["css"],'
                     '"routing_rationale":"CSS-only visual change.",'
                     '"assignments":[{"agent":"css","task":"Update button color."}],'

@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from agentorchestra.config import Settings, ensure_runtime_directories, get_settings
 from agentorchestra.exceptions import DomainValidationError
 from agentorchestra.models import PatchProposal, SpecialistName
+from agentorchestra.services.patch_policy import validate_specialist_patch
 from agentorchestra.workspace_models import (
     DiffReport,
     FileDiff,
@@ -387,6 +388,19 @@ def propose_patch(
             summary=proposal.summary,
             reason=PatchRejectionReason.PATCH_TOO_LARGE,
             message="Patched file would exceed the configured byte limit.",
+            match_count=1,
+            bytes_before=len(original_bytes),
+            before_sha256=before_hash,
+        )
+
+    ownership_error = validate_specialist_patch(content, modified, trusted_specialist)
+    if ownership_error is not None:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=proposal.file,
+            summary=proposal.summary,
+            reason=PatchRejectionReason.OWNERSHIP_VIOLATION,
+            message=ownership_error,
             match_count=1,
             bytes_before=len(original_bytes),
             before_sha256=before_hash,

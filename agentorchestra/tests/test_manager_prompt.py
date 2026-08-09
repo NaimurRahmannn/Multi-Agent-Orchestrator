@@ -13,6 +13,10 @@ def test_manager_prompt_contains_ownership_boundaries():
     assert "seo_edit" in prompt
     assert "seo_diagnostic" in prompt
     assert "structured request_type is authoritative" in prompt
+    assert "html_edit" in prompt
+    assert "css_edit" in prompt
+    assert "html_css_edit" in prompt
+    assert "do not invent another execute request_type" in prompt
 
 
 def test_manager_prompt_contains_required_routing_rules():

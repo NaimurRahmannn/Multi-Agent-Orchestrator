@@ -38,6 +38,7 @@ class PatchRejectionReason(StrEnum):
     PATCH_TOO_LARGE = "patch_too_large"
     NO_OP = "no_op"
     INVALID_PATCH = "invalid_patch"
+    OWNERSHIP_VIOLATION = "ownership_violation"
 
 
 class WorkspaceLimits(WorkspaceModel):
