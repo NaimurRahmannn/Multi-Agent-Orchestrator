@@ -44,7 +44,7 @@ See [Architecture](docs/architecture.md) for the complete component, sequence, o
 
 ## Requirements
 
-- Python `>=3.10,<3.14`; development and final verification use Python 3.12.
+- Python `>=3.11,<3.14`; development and final verification use Python 3.12.
 - [uv](https://docs.astral.sh/uv/) and the committed `uv.lock`.
 - Node.js and npm with the committed `package-lock.json`.
 - Playwright Chromium for screenshots and Chrome/Chromium for Lighthouse.

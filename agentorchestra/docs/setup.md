@@ -5,7 +5,7 @@ This guide prepares a clean clone of AgentOrchestra without assuming an existing
 ## Prerequisites
 
 - Git.
-- Python `>=3.10,<3.14` (Python 3.12 is the development target).
+- Python `>=3.11,<3.14` (Python 3.12 is the development target).
 - `uv` for locked Python dependency installation.
 - Node.js and npm for the locked Lighthouse dependency.
 - Chrome/Chromium. Playwright installs its own Chromium for screenshots.

@@ -3,7 +3,7 @@
 ## Python and uv
 
 - **`uv` not found:** install uv, open a new shell, and confirm `uv --version`.
-- **`uv sync --frozen` fails:** do not delete `uv.lock`; check Python is within `>=3.10,<3.14` and retry with package-index access.
+- **`uv sync --frozen` fails:** do not delete `uv.lock`; check Python is within `>=3.11,<3.14` and retry with package-index access.
 - **Import failure:** run commands from the application root with `uv run`. Root launchers add `src` for direct script use.
 - **Wrong environment:** compare `uv run python --version` and `uv run python -c "import agentorchestra; print(agentorchestra.__file__)"`.
 
