@@ -8,13 +8,14 @@ SUCCESS_TOKEN = "chromium-executable-ready"
 
 
 def main() -> int:
-    """Report whether Playwright's Chromium executable exists after a clean context exit."""
+    """Report whether Playwright Chromium launches and shuts down cleanly."""
     try:
         with sync_playwright() as playwright:
-            available = Path(playwright.chromium.executable_path).is_file()
+            if not Path(playwright.chromium.executable_path).is_file():
+                return 1
+            browser = playwright.chromium.launch(headless=True)
+            browser.close()
     except Exception:
-        return 1
-    if not available:
         return 1
     print(SUCCESS_TOKEN)
     return 0
