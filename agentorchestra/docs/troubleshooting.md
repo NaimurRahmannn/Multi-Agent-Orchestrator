@@ -39,6 +39,10 @@ Never paste keys into logs or issue text.
 
 - **Chromium not installed:** run `uv run playwright install chromium`.
 - **Executable missing:** run `uv run playwright install --dry-run chromium`, then reinstall the browser.
+- **Chromium readiness reports missing:** the readiness command probes Playwright in an isolated
+  child process and requires a clean exit with empty stderr. Repair or reinstall Playwright when
+  its child probe emits a shutdown error; the captured error is intentionally not leaked into the
+  supervisor-facing readiness output.
 - **Windows file lock:** stop Streamlit/browser processes and retry; do not delete protected site trees.
 - **Screenshot timeout/failure:** the edit may continue with a warning. Review the deterministic diff and QA evidence instead.
 - **Screenshot cleanup warning:** retain the report for diagnosis or remove ignored artifacts only after processes release them.

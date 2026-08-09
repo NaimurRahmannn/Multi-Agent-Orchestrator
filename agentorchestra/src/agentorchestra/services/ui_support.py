@@ -2,16 +2,21 @@ from __future__ import annotations
 
 import importlib.util
 import shutil
+import subprocess
+import sys
 from collections.abc import Callable
-from contextlib import AbstractContextManager
 from pathlib import Path
-from typing import Any
 
 from pydantic import StrictBool
 
 from agentorchestra.config import GroqAgentName, Settings
 from agentorchestra.models import AgentOrchestraModel, EditRequest
 from agentorchestra.services.workspace import validate_site_structure
+
+CHROMIUM_PROBE_SUCCESS = "chromium-executable-ready"
+CHROMIUM_PROBE_TIMEOUT_SECONDS = 15.0
+SubprocessRunner = Callable[..., subprocess.CompletedProcess[str]]
+ChromiumProbe = Callable[[], bool]
 
 
 class RuntimeReadiness(AgentOrchestraModel):
@@ -55,7 +60,7 @@ def check_runtime_readiness(
     settings: Settings,
     *,
     check_chromium: bool = False,
-    playwright_factory: Callable[[], AbstractContextManager[Any]] | None = None,
+    chromium_probe: ChromiumProbe | None = None,
 ) -> RuntimeReadiness:
     configured = {
         agent: _agent_configured(settings, agent)
@@ -66,10 +71,9 @@ def check_runtime_readiness(
     if check_chromium:
         chromium_available = False
         if playwright_available:
-            factory = playwright_factory or _sync_playwright_factory
             try:
-                with factory() as playwright:
-                    chromium_available = Path(playwright.chromium.executable_path).is_file()
+                probe = chromium_probe or (lambda: _probe_chromium_subprocess(settings))
+                chromium_available = bool(probe())
             except Exception:
                 chromium_available = False
     try:
@@ -108,7 +112,32 @@ def _agent_configured(settings: Settings, agent: GroqAgentName) -> bool:
     return True
 
 
-def _sync_playwright_factory() -> AbstractContextManager[Any]:
-    from playwright.sync_api import sync_playwright
-
-    return sync_playwright()
+def _probe_chromium_subprocess(
+    settings: Settings,
+    *,
+    runner: SubprocessRunner = subprocess.run,
+    timeout_seconds: float = CHROMIUM_PROBE_TIMEOUT_SECONDS,
+) -> bool:
+    """Probe Chromium in an isolated process and accept only a clean shutdown."""
+    probe_script = Path(__file__).resolve().parents[1] / "scripts" / "probe_playwright.py"
+    try:
+        result = runner(
+            [sys.executable, str(probe_script)],
+            cwd=settings.project_root,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout_seconds,
+            check=False,
+            shell=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return (
+        result.returncode == 0
+        and result.stdout.strip() == CHROMIUM_PROBE_SUCCESS
+        and not result.stderr.strip()
+    )
