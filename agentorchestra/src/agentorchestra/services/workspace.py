@@ -16,6 +16,7 @@ from agentorchestra.config import Settings, ensure_runtime_directories, get_sett
 from agentorchestra.exceptions import DomainValidationError
 from agentorchestra.models import PatchProposal, SpecialistName
 from agentorchestra.services.patch_policy import validate_specialist_patch
+from agentorchestra.services.transaction_lock import working_site_transaction
 from agentorchestra.workspace_models import (
     DiffReport,
     FileDiff,
@@ -36,6 +37,7 @@ REQUIRED_EDITABLE_FILES = {
 }
 DEFAULT_WORKSPACE_LIMITS = WorkspaceLimits()
 MAX_READ_LINES = DEFAULT_WORKSPACE_LIMITS.max_read_lines
+_BASELINE_METADATA_PREFIX = ".agentorchestra-baseline-"
 
 RunIdFactory = Callable[[], str]
 CopyFunction = Callable[..., object]
@@ -85,27 +87,48 @@ def create_staged_copy(
     working_path = resolved_settings.working_site_dir
     staging_root = resolved_settings.staging_root_dir
 
-    validate_site_structure(working_path)
-    _validate_staging_root(staging_root)
     run_id = (run_id_factory or _uuid_run_id)()
+    handle: WorkspaceHandle | None = None
+    cleanup_required = False
     try:
-        handle = WorkspaceHandle(
-            run_id=run_id,
-            path=staging_root / run_id,
-            staging_root=staging_root,
-            source_working_path=working_path,
-        )
-    except ValidationError as exc:
-        raise WorkspaceError("Generated run ID or staged path is invalid.") from exc
-    _validate_workspace_boundary(handle, require_exists=False)
-    if handle.path.exists() or handle.path.is_symlink():
-        raise WorkspaceError(f"Staged workspace already exists for run_id: {run_id}")
+        with working_site_transaction(resolved_settings):
+            from agentorchestra.services.site_digest import compute_site_tree_digest
 
-    copier = copy_function or shutil.copytree
-    try:
-        copier(working_path, handle.path, symlinks=False)
-        validate_staged_site(handle)
+            validate_site_structure(working_path)
+            _validate_staging_root(staging_root)
+            source_digest = compute_site_tree_digest(working_path).digest
+            try:
+                handle = WorkspaceHandle(
+                    run_id=run_id,
+                    path=staging_root / run_id,
+                    staging_root=staging_root,
+                    source_working_path=working_path,
+                    source_working_digest=source_digest,
+                )
+            except ValidationError as exc:
+                raise WorkspaceError("Generated run ID or staged path is invalid.") from exc
+            _validate_workspace_boundary(handle, require_exists=False)
+            metadata_path = _baseline_metadata_path(handle)
+            if (
+                handle.path.exists()
+                or handle.path.is_symlink()
+                or metadata_path.exists()
+                or metadata_path.is_symlink()
+            ):
+                raise WorkspaceError(f"Staged workspace already exists for run_id: {run_id}")
+
+            copier = copy_function or shutil.copytree
+            cleanup_required = True
+            copier(working_path, handle.path, symlinks=False)
+            validate_staged_site(handle)
+            if compute_site_tree_digest(handle.path).digest != source_digest:
+                raise WorkspaceError("Staged workspace does not match its working-site baseline.")
+            _write_baseline_metadata(metadata_path, source_digest)
     except Exception as exc:
+        if not cleanup_required or handle is None:
+            if isinstance(exc, WorkspaceError):
+                raise
+            raise WorkspaceError(f"Failed to create staged workspace for run_id: {run_id}") from exc
         try:
             _remove_run_directory(handle)
         except Exception as cleanup_exc:
@@ -123,12 +146,14 @@ def get_workspace_handle(run_id: str, *, settings: Settings | None = None) -> Wo
     resolved_settings = settings or get_settings()
     staging_root = resolved_settings.staging_root_dir
     try:
-        handle = WorkspaceHandle(
+        provisional = WorkspaceHandle(
             run_id=run_id,
             path=staging_root / run_id,
             staging_root=staging_root,
             source_working_path=resolved_settings.working_site_dir,
         )
+        source_digest = _read_baseline_metadata(_baseline_metadata_path(provisional))
+        handle = provisional.model_copy(update={"source_working_digest": source_digest})
     except ValidationError as exc:
         raise WorkspaceError("Invalid staged workspace run ID.") from exc
     _validate_workspace_boundary(handle, require_exists=True)
@@ -595,10 +620,50 @@ def _validate_workspace_boundary(handle: WorkspaceHandle, *, require_exists: boo
 
 def _remove_run_directory(handle: WorkspaceHandle) -> None:
     candidate = handle.path
+    metadata = _baseline_metadata_path(handle)
     if candidate.is_symlink():
         raise WorkspaceError("Refusing to clean a symlinked staged workspace.")
+    if metadata.is_symlink():
+        raise WorkspaceError("Refusing to clean symlinked workspace baseline metadata.")
     if candidate.exists():
         shutil.rmtree(candidate)
+    metadata.unlink(missing_ok=True)
+
+
+def _baseline_metadata_path(handle: WorkspaceHandle) -> Path:
+    path = handle.staging_root / f"{_BASELINE_METADATA_PREFIX}{handle.run_id}.sha256"
+    if path.parent != handle.staging_root:
+        raise WorkspaceError("Workspace baseline metadata path is unsafe.")
+    return path
+
+
+def _write_baseline_metadata(path: Path, digest: str) -> None:
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags, 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = -1
+            stream.write(f"{digest}\n".encode("ascii"))
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError as exc:
+        raise WorkspaceError("Unable to persist the workspace baseline digest.") from exc
+    finally:
+        if "descriptor" in locals() and descriptor >= 0:
+            os.close(descriptor)
+
+
+def _read_baseline_metadata(path: Path) -> str:
+    if path.is_symlink():
+        raise WorkspaceError("Workspace baseline metadata must not be a symlink.")
+    try:
+        content = _read_bounded_bytes(path, 65, "workspace baseline metadata")
+        value = content.decode("ascii", errors="strict").strip()
+    except (OSError, UnicodeDecodeError, FileToolError) as exc:
+        raise WorkspaceError("Workspace baseline metadata is unavailable or invalid.") from exc
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise WorkspaceError("Workspace baseline metadata is unavailable or invalid.")
+    return value
 
 
 def _site_inventory(site_root: Path) -> tuple[set[Path], set[Path]]:

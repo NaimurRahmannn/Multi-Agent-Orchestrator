@@ -85,6 +85,9 @@ def test_create_lookup_and_cleanup_staged_copy(tmp_path):
     looked_up = get_workspace_handle("run123", settings=settings)
 
     assert looked_up.path == handle.path
+    assert looked_up.source_working_digest == handle.source_working_digest
+    metadata = settings.staging_root_dir / ".agentorchestra-baseline-run123.sha256"
+    assert metadata.read_text(encoding="ascii").strip() == handle.source_working_digest
     assert (handle.path / "index.html").read_text(encoding="utf-8") == (
         settings.working_site_dir / "index.html"
     ).read_text(encoding="utf-8")
@@ -92,16 +95,32 @@ def test_create_lookup_and_cleanup_staged_copy(tmp_path):
     cleanup_staged_workspace(handle)
 
     assert not handle.path.exists()
+    assert not metadata.exists()
     assert (settings.working_site_dir / "index.html").exists()
     assert (settings.fixture_site_dir / "index.html").exists()
 
 
 def test_create_staged_copy_rejects_duplicate_run_id(tmp_path):
     settings = make_settings(tmp_path)
-    create_staged_copy(settings=settings, run_id_factory=lambda: "fixed")
+    original = create_staged_copy(settings=settings, run_id_factory=lambda: "fixed")
+    original_index = (original.path / "index.html").read_bytes()
 
     with pytest.raises(WorkspaceError):
         create_staged_copy(settings=settings, run_id_factory=lambda: "fixed")
+
+    assert original.path.is_dir()
+    assert (original.path / "index.html").read_bytes() == original_index
+    assert (settings.staging_root_dir / ".agentorchestra-baseline-fixed.sha256").is_file()
+
+
+def test_workspace_lookup_rejects_missing_baseline_metadata(tmp_path):
+    settings = make_settings(tmp_path)
+    handle = create_staged_copy(settings=settings, run_id_factory=lambda: "missing-baseline")
+    metadata = settings.staging_root_dir / ".agentorchestra-baseline-missing-baseline.sha256"
+    metadata.unlink()
+
+    with pytest.raises(WorkspaceError, match="baseline metadata"):
+        get_workspace_handle(handle.run_id, settings=settings)
 
 
 def test_read_file_returns_bounded_exact_lines(tmp_path):

@@ -23,5 +23,6 @@ sites/staging/*
 !sites/staging/.gitkeep
 .agentorchestra-*-candidate-*/
 .agentorchestra-*-backup-*/
+.agentorchestra-working-site.lock
 sites/.agentorchestra-*-candidate-*/
 sites/.agentorchestra-*-backup-*/

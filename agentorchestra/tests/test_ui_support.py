@@ -2,8 +2,8 @@ from contextlib import contextmanager
 from types import SimpleNamespace
 
 from agentorchestra.services.ui_support import (
-    default_target_page,
     check_runtime_readiness,
+    default_target_page,
     list_supported_target_pages,
 )
 from tests.test_workspace_service import make_settings

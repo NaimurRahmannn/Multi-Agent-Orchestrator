@@ -85,10 +85,10 @@ All agents use `allow_delegation=False`. Manager never reads files or invokes sp
 ```mermaid
 flowchart TD
     FIX[fixture] -->|transactional reset source| WORK[working]
-    WORK -->|copy| STAGE[staging/run_id]
+    WORK -->|locked copy + baseline digest| STAGE[staging/run_id]
     STAGE --> EDIT[specialist edits]
     EDIT --> REVIEW[validated diff + QA]
-    REVIEW -->|accept| CAND[candidate]
+    REVIEW -->|locked digest compare-and-swap| CAND[candidate]
     WORK -->|rename| BACK[backup]
     CAND -->|verified install| WORK2[working]
     WORK2 -->|digest verified| CLEAN[clean staging/candidate/backup]
@@ -97,7 +97,7 @@ flowchart TD
     BACK -->|unverified restore| CRIT[critical recovery; preserve paths]
 ```
 
-Candidate and backup paths are server-generated and constrained to the application root. Digest equality complements exact diff equality.
+Candidate and backup paths are server-generated and constrained to the application root. A project-wide file lock serializes staged snapshots, promotion, rollback, and reset across threads and processes. Each staged workspace persists the digest of its source working tree; promotion compares it under the lock before any rename, so two runs from the same baseline cannot both commit. Digest equality complements exact diff equality.
 
 ## Evidence model
 
@@ -162,7 +162,7 @@ Screenshot failures normally become warnings and the transition continues; safet
 - Absolute paths, traversal, unsupported extensions, structure drift, assets changes, and symlinks are rejected.
 - Manager, specialist, and QA keys/models are resolved independently with no role fallback.
 - Preview and screenshot networking is loopback-only; agents receive no shell or browser tool.
-- Promotion revalidates the reviewed diff, evidence digest, and content digest immediately before replacement.
+- Promotion revalidates the source baseline digest, reviewed diff, evidence digest, and content digest immediately before replacement while holding the shared transaction lock.
 
 ## Failure behavior
 

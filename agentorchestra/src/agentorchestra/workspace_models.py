@@ -58,6 +58,11 @@ class WorkspaceHandle(WorkspaceModel):
     path: Path
     staging_root: Path = Field(exclude=True)
     source_working_path: Path | None = None
+    source_working_digest: StrictStr | None = Field(
+        default=None,
+        exclude=True,
+        pattern=r"^[0-9a-f]{64}$",
+    )
 
     @field_validator("path", "staging_root", "source_working_path", mode="before")
     @classmethod

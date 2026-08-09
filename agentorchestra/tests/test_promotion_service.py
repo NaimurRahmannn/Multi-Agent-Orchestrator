@@ -91,6 +91,40 @@ def test_promote_rejects_staging_mutation_after_qa_review(tmp_path):
     assert "var(--accent)" in (settings.working_site_dir / "style.css").read_text()
 
 
+def test_second_promotion_from_same_baseline_is_rejected_without_lost_update(tmp_path):
+    settings = make_settings(tmp_path)
+    first = create_staged_copy(settings=settings, run_id_factory=lambda: "first")
+    second = create_staged_copy(settings=settings, run_id_factory=lambda: "second")
+    propose_patch(
+        first,
+        specialist=SpecialistName.CSS,
+        file="style.css",
+        old_text="  background: var(--accent);\n",
+        new_text="  background: #0b3d91;\n",
+        summary="First accepted edit.",
+    )
+    propose_patch(
+        second,
+        specialist=SpecialistName.CSS,
+        file="style.css",
+        old_text="  background: var(--accent);\n",
+        new_text="  background: #7c2d12;\n",
+        summary="Stale competing edit.",
+    )
+    first_reviewed = generate_diff(first, settings=settings)
+    second_reviewed = generate_diff(second, settings=settings)
+
+    promote_staged_copy(first, first_reviewed, settings=settings)
+
+    with pytest.raises(PromotionError, match="changed since the staged workspace was created"):
+        promote_staged_copy(second, second_reviewed, settings=settings)
+
+    installed = (settings.working_site_dir / "style.css").read_text(encoding="utf-8")
+    assert "background: #0b3d91" in installed
+    assert "background: #7c2d12" not in installed
+    assert second.path.exists()
+
+
 def test_promotion_failure_restores_working_backup(tmp_path):
     settings = make_settings(tmp_path)
     handle = create_staged_copy(settings=settings, run_id_factory=lambda: "restore")

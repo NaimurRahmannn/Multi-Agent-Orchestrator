@@ -16,6 +16,7 @@ from agentorchestra.pipeline_models import (
     SiteTreeDigest,
 )
 from agentorchestra.services.site_digest import compute_site_tree_digest
+from agentorchestra.services.transaction_lock import working_site_transaction
 from agentorchestra.services.workspace import (
     cleanup_staged_workspace,
     generate_diff,
@@ -44,19 +45,52 @@ def promote_staged_copy(
     temporary_id_factory: IdFactory = lambda: uuid.uuid4().hex,
     digest_function: DigestFunction = compute_site_tree_digest,
 ) -> PromotionResult:
-    """Commit a reviewed staged site, rolling back only commit/validation failures."""
+    """Commit a reviewed staged site under the shared working-site lock."""
     resolved = settings or get_settings()
+    with working_site_transaction(resolved):
+        return _promote_staged_copy_locked(
+            handle,
+            reviewed_diff,
+            settings=resolved,
+            copytree=copytree,
+            rename_path=rename_path,
+            rmtree=rmtree,
+            workspace_cleanup=workspace_cleanup,
+            temporary_id_factory=temporary_id_factory,
+            digest_function=digest_function,
+        )
+
+
+def _promote_staged_copy_locked(
+    handle: WorkspaceHandle,
+    reviewed_diff: DiffReport,
+    *,
+    settings: Settings,
+    copytree: CopyTree,
+    rename_path: RenamePath | None,
+    rmtree: RemoveTree,
+    workspace_cleanup: WorkspaceCleanup,
+    temporary_id_factory: IdFactory,
+    digest_function: DigestFunction,
+) -> PromotionResult:
+    """Commit after the caller has serialized all working-site transactions."""
+    resolved = settings
     renamer = rename_path or _rename_path
     working = resolved.working_site_dir
 
     validate_site_structure(resolved.fixture_site_dir)
     validate_site_structure(working)
+    pre_working = digest_function(working)
+    if handle.source_working_digest is None:
+        raise PromotionError("Staged workspace is missing its working-site baseline digest.")
+    if pre_working.digest != handle.source_working_digest:
+        raise PromotionError("Working site changed since the staged workspace was created.")
     validate_staged_site(handle)
+
     final_diff = generate_diff(handle, settings=resolved)
     if final_diff != reviewed_diff or final_diff.is_empty:
         raise PromotionError("Reviewed staged diff changed before promotion.")
 
-    pre_working = digest_function(working)
     staged = digest_function(handle.path)
     transaction_id = _safe_generated_id(temporary_id_factory())
     candidate = _temporary_site_path(
@@ -171,8 +205,30 @@ def reset_working_from_fixture(
     temporary_id_factory: IdFactory = lambda: uuid.uuid4().hex,
     digest_function: DigestFunction = compute_site_tree_digest,
 ) -> ResetResult:
-    """Transactionally replace working with an exact fixture copy."""
+    """Transactionally replace working under the shared working-site lock."""
     resolved = settings or get_settings()
+    with working_site_transaction(resolved):
+        return _reset_working_from_fixture_locked(
+            settings=resolved,
+            copytree=copytree,
+            rename_path=rename_path,
+            rmtree=rmtree,
+            temporary_id_factory=temporary_id_factory,
+            digest_function=digest_function,
+        )
+
+
+def _reset_working_from_fixture_locked(
+    *,
+    settings: Settings,
+    copytree: CopyTree,
+    rename_path: RenamePath | None,
+    rmtree: RemoveTree,
+    temporary_id_factory: IdFactory,
+    digest_function: DigestFunction,
+) -> ResetResult:
+    """Reset after the caller has serialized all working-site transactions."""
+    resolved = settings
     renamer = rename_path or _rename_path
     fixture = resolved.fixture_site_dir
     working = resolved.working_site_dir

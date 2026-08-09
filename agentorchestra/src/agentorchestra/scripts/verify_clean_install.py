@@ -173,7 +173,16 @@ def offline_checks(root: Path) -> list[tuple[str, bool, str]]:
     checks.append(("real-looking secrets", secret is None, "none found"))
 
     ignore_text = (root / ".gitignore").read_text(encoding="utf-8")
-    ignore_ok = all(value in ignore_text for value in (".env", "node_modules/", "reports/lighthouse/*", "sites/staging/*"))
+    ignore_ok = all(
+        value in ignore_text
+        for value in (
+            ".env",
+            "node_modules/",
+            "reports/lighthouse/*",
+            "sites/staging/*",
+            ".agentorchestra-working-site.lock",
+        )
+    )
     checks.append(("generated-file ignores", ignore_ok, "configured" if ignore_ok else "incomplete"))
     fixture_root = root / "sites" / "fixture"
     working_root = root / "sites" / "working"

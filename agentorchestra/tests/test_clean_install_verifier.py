@@ -45,7 +45,8 @@ def test_offline_checks_reject_working_tree_that_differs_from_fixture(tmp_path):
     fixture.mkdir(parents=True)
     working.mkdir(parents=True)
     (root / ".gitignore").write_text(
-        ".env\nnode_modules/\nreports/lighthouse/*\nsites/staging/*\n",
+        ".env\nnode_modules/\nreports/lighthouse/*\nsites/staging/*\n"
+        ".agentorchestra-working-site.lock\n",
         encoding="utf-8",
     )
     for name in ("index.html", "about.html", "contact.html", "style.css"):

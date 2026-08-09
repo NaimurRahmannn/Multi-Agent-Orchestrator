@@ -148,7 +148,7 @@ Focused example: `uv run python -m pytest tests/test_flow_transitions.py -q`. Fu
 
 ## Generated files
 
-Runtime staging is under `sites/staging/`; raw Lighthouse reports, screenshots, and routing reports are under `reports/`. Promotion/reset candidates and backups use `.agentorchestra-*-candidate-*` and `.agentorchestra-*-backup-*` names. Generated contents are ignored while tracked `.gitkeep` files retain required directories. Recovery directories from a critical rollback must not be deleted blindly.
+Runtime staging is under `sites/staging/`; raw Lighthouse reports, screenshots, and routing reports are under `reports/`. Promotion/reset candidates and backups use `.agentorchestra-*-candidate-*` and `.agentorchestra-*-backup-*` names. A persistent, ignored `.agentorchestra-working-site.lock` serializes staged snapshots, promotion, rollback, and reset across UI sessions and processes. Generated contents are ignored while tracked `.gitkeep` files retain required directories. Recovery directories from a critical rollback must not be deleted blindly.
 
 ## Limitations
 
