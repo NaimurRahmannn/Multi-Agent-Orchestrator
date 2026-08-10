@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, suppress
@@ -67,11 +68,7 @@ def capture_page_screenshot(
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with preview_factory(target) as base_url, factory() as playwright:
             try:
-                if not Path(playwright.chromium.executable_path).is_file():
-                    raise RuntimeError(
-                        "Chromium browser is unavailable. Run python -m playwright install chromium."
-                    )
-                browser = playwright.chromium.launch(headless=True)
+                browser = _launch_chromium(playwright.chromium)
                 context = browser.new_context(
                     viewport={"width": VIEWPORT_WIDTH, "height": VIEWPORT_HEIGHT}
                 )
@@ -185,6 +182,20 @@ def _sync_playwright_factory() -> AbstractContextManager[Any]:
     from playwright.sync_api import sync_playwright
 
     return sync_playwright()
+
+
+def _launch_chromium(chromium: Any) -> Any:
+    bundled = Path(chromium.executable_path)
+    if bundled.is_file():
+        return chromium.launch(headless=True)
+    configured = os.environ.get("CHROME_PATH", "").strip()
+    system = shutil.which("google-chrome") or shutil.which("chromium")
+    fallback = Path(configured) if configured else Path(system) if system else None
+    if fallback is not None and fallback.is_file():
+        return chromium.launch(headless=True, executable_path=str(fallback))
+    raise RuntimeError(
+        "Chromium browser is unavailable. Install Playwright Chromium or set CHROME_PATH."
+    )
 
 
 def _loopback_origin(base_url: str) -> tuple[str, str, int]:

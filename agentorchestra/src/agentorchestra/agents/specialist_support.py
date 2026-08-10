@@ -35,6 +35,7 @@ def build_specialist_agent(
     backstory: str,
     tools: Sequence[Any],
     verbose: bool,
+    max_iter: int = 7,
 ) -> Any:
     localize_crewai_paths()
     from crewai import Agent
@@ -51,7 +52,7 @@ def build_specialist_agent(
         memory=False,
         planning=False,
         reasoning=False,
-        max_iter=7,
+        max_iter=max_iter,
         max_retry_limit=0,
     )
 

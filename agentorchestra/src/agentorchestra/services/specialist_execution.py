@@ -91,7 +91,11 @@ class SpecialistExecutionService:
                     "Specialist runner returned evidence for a different assignment."
                 )
             results.append(result)
-            if result.status in {SpecialistRunStatus.BLOCKED, SpecialistRunStatus.FAILED}:
+            if result.status in {
+                SpecialistRunStatus.BLOCKED,
+                SpecialistRunStatus.FAILED,
+                SpecialistRunStatus.CLARIFICATION_REQUIRED,
+            }:
                 break
 
         try:
@@ -161,8 +165,23 @@ def _overall_status(
     results: list[SpecialistRunResult], *, all_selected: bool
 ) -> SpecialistExecutionStatus:
     succeeded = sum(result.status is SpecialistRunStatus.SUCCEEDED for result in results)
-    if succeeded == len(results) and succeeded and all_selected:
+    satisfied = sum(
+        result.status in {
+            SpecialistRunStatus.SUCCEEDED,
+            SpecialistRunStatus.ALREADY_SATISFIED,
+        }
+        for result in results
+    )
+    if succeeded and satisfied == len(results) and all_selected:
         return SpecialistExecutionStatus.SUCCEEDED
+    if any(result.status is SpecialistRunStatus.CLARIFICATION_REQUIRED for result in results):
+        return SpecialistExecutionStatus.CLARIFICATION_REQUIRED
+    if (
+        results
+        and all(result.status is SpecialistRunStatus.ALREADY_SATISFIED for result in results)
+        and all_selected
+    ):
+        return SpecialistExecutionStatus.ALREADY_SATISFIED
     if succeeded:
         return SpecialistExecutionStatus.PARTIAL
     if any(result.status is SpecialistRunStatus.FAILED for result in results):

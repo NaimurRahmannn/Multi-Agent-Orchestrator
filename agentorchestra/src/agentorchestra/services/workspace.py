@@ -633,6 +633,21 @@ def update_css_declaration(
             before_sha256=before_hash,
         )
     if len(rule_matches) > 1:
+        property_matches = []
+        for candidate in rule_matches:
+            _rule_start, candidate_body_start, candidate_body_end, _rule_end = candidate
+            candidate_body = content[candidate_body_start:candidate_body_end]
+            candidate_declarations = _find_simple_css_declarations(
+                candidate_body,
+                property_name,
+                content_offset=candidate_body_start,
+                code_mask=code_mask,
+            )
+            if len(candidate_declarations) == 1:
+                property_matches.append(candidate)
+        if len(property_matches) == 1:
+            rule_matches = property_matches
+    if len(rule_matches) > 1:
         return _rejected_patch(
             specialist=trusted_specialist,
             file=file,

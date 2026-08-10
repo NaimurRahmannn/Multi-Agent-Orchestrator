@@ -199,6 +199,8 @@ def execute_specialists(flow: AgentOrchestraFlow) -> SpecialistExecutionReport |
         for result in report.results:
             status = {
                 "succeeded": TimelineEventStatus.SUCCEEDED,
+                "already_satisfied": TimelineEventStatus.SKIPPED,
+                "clarification_required": TimelineEventStatus.BLOCKED,
                 "blocked": TimelineEventStatus.BLOCKED,
                 "failed": TimelineEventStatus.FAILED,
             }[result.status.value]
@@ -218,10 +220,20 @@ def execute_specialists(flow: AgentOrchestraFlow) -> SpecialistExecutionReport |
 
 def route_specialist_result(
     flow: AgentOrchestraFlow,
-) -> Literal["blocked", "failed", "verification_ready"]:
+) -> Literal[
+    "specialist_clarification",
+    "already_satisfied",
+    "blocked",
+    "failed",
+    "verification_ready",
+]:
     if flow.state.error or flow.state.specialist_report is None:
         return "failed"
     status = flow.state.specialist_report.status
+    if status is SpecialistExecutionStatus.CLARIFICATION_REQUIRED:
+        return "specialist_clarification"
+    if status is SpecialistExecutionStatus.ALREADY_SATISFIED:
+        return "already_satisfied"
     if status is SpecialistExecutionStatus.BLOCKED:
         return "blocked"
     if status is not SpecialistExecutionStatus.SUCCEEDED:
@@ -288,6 +300,7 @@ def validate_and_build_qa_evidence(
         plan = require_executable_plan(flow)
         report = require_specialist_report(flow)
         reviewed_diff = require_reviewed_diff(flow)
+        report = _attach_computed_style_evidence(flow, report)
         flow._dependencies.evidence_validator(plan, report, reviewed_diff)
         staged_digest = flow._dependencies.digest_function(require_workspace(flow).path)
         evidence = flow._dependencies.evidence_builder(
@@ -315,6 +328,38 @@ def validate_and_build_qa_evidence(
         )
         record_failure(flow, exc, "Execution evidence validation failed.")
         return None
+
+
+def _attach_computed_style_evidence(
+    flow: AgentOrchestraFlow,
+    report: SpecialistExecutionReport,
+) -> SpecialistExecutionReport:
+    verifier = flow._dependencies.computed_style_verifier
+    if verifier is None or not any(result.style_changes for result in report.results):
+        return report
+    try:
+        updated_results = []
+        for result in report.results:
+            if not result.style_changes:
+                updated_results.append(result)
+                continue
+            verified = verifier(
+                settings=flow._dependencies.settings,
+                site_root=require_workspace(flow).path,
+                target_page=require_request(flow).target_page,
+                run_id=require_workspace(flow).run_id,
+                changes=result.style_changes,
+            )
+            updated_results.append(result.model_copy(update={"style_changes": verified}))
+        updated = report.model_copy(update={"results": updated_results})
+        flow.state.specialist_report = updated
+        return updated
+    except Exception:
+        flow.state.warnings.append(
+            "Browser-computed style verification was unavailable; QA received "
+            "source-verified semantic evidence."
+        )
+        return report
 
 
 def route_evidence_result(
@@ -437,6 +482,44 @@ def finalize_blocked(flow: AgentOrchestraFlow) -> EditRunReport:
         flow,
         status=EditOutcomeStatus.BLOCKED,
         message="Specialist execution was blocked before QA.",
+        staging_cleaned=staging_cleaned,
+    )
+
+
+def finalize_specialist_clarification(flow: AgentOrchestraFlow) -> EditRunReport:
+    report = flow.state.specialist_report
+    question = None
+    if report is not None:
+        question = next(
+            (
+                result.completion.clarification_question
+                for result in report.results
+                if result.completion is not None
+                and getattr(result.completion, "clarification_question", None)
+            ),
+            None,
+        )
+    staging_cleaned = cleanup_nonaccepted_workspace(flow)
+    return build_report(
+        flow,
+        status=EditOutcomeStatus.CLARIFICATION_REQUIRED,
+        message=question or "Please clarify which page element should change.",
+        staging_cleaned=staging_cleaned,
+    )
+
+
+def finalize_already_satisfied(flow: AgentOrchestraFlow) -> EditRunReport:
+    report = flow.state.specialist_report
+    summary = (
+        report.results[-1].completion.summary
+        if report is not None and report.results and report.results[-1].completion is not None
+        else "The requested style is already present."
+    )
+    staging_cleaned = cleanup_nonaccepted_workspace(flow)
+    return build_report(
+        flow,
+        status=EditOutcomeStatus.ALREADY_SATISFIED,
+        message=summary,
         staging_cleaned=staging_cleaned,
     )
 

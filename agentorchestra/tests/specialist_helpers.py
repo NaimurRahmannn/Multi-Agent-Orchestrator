@@ -17,6 +17,7 @@ from agentorchestra.specialist_models import (
     SpecialistRunResult,
     SpecialistRunStatus,
 )
+from agentorchestra.style_models import StyleChangeEvidence
 from agentorchestra.workspace_models import (
     DiffReport,
     PatchExecutionResult,
@@ -106,6 +107,15 @@ def run_result(
             if status is SpecialistRunStatus.SUCCEEDED
             else []
         )
+    completion_status = (
+        "completed"
+        if status is SpecialistRunStatus.SUCCEEDED
+        else "already_satisfied"
+        if status is SpecialistRunStatus.ALREADY_SATISFIED
+        else "clarification_required"
+        if status is SpecialistRunStatus.CLARIFICATION_REQUIRED
+        else "blocked"
+    )
     completion = (
         SEOCompletion(
             mode=SEOExecutionMode.EDIT,
@@ -121,14 +131,25 @@ def run_result(
         )
         if specialist is SpecialistName.SEO
         else SpecialistCompletion(
-            status="completed" if status is SpecialistRunStatus.SUCCEEDED else "blocked",
+            status=completion_status,
             summary=(
                 "Specialist completed safely."
                 if status is SpecialistRunStatus.SUCCEEDED
+                else "The requested style is already present."
+                if status is SpecialistRunStatus.ALREADY_SATISFIED
+                else "The requested target is ambiguous."
+                if status is SpecialistRunStatus.CLARIFICATION_REQUIRED
                 else "Specialist was blocked."
             ),
             remaining_issue=(
-                None if status is SpecialistRunStatus.SUCCEEDED else "No safe patch was available."
+                "No safe patch was available."
+                if status in {SpecialistRunStatus.BLOCKED, SpecialistRunStatus.FAILED}
+                else None
+            ),
+            clarification_question=(
+                "Which button should change?"
+                if status is SpecialistRunStatus.CLARIFICATION_REQUIRED
+                else None
             ),
         )
     )
@@ -148,6 +169,22 @@ def run_result(
         token_usage=TokenUsage(),
         model="groq/test-model",
         error="Internal specialist failure." if status is SpecialistRunStatus.FAILED else None,
+        style_changes=(
+            [
+                StyleChangeEvidence(
+                    target_id="index.hero.project_cta",
+                    label="Start a project button",
+                    selector=".button-link",
+                    property_name="background",
+                    before_value="green",
+                    after_value="#16a34a",
+                    expected_relation="equals_requested",
+                )
+            ]
+            if specialist is SpecialistName.CSS
+            and status is SpecialistRunStatus.ALREADY_SATISFIED
+            else []
+        ),
     )
 
 

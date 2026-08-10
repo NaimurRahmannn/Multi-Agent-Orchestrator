@@ -116,10 +116,10 @@ Keys may come from separately authorized Groq organizations. Never commit `.env`
 uv run python scripts/run_ui.py
 
 # Full QA-controlled edit (live calls; may promote working)
-uv run python scripts/run_edit_flow.py --target-page index.html --instruction "In style.css, inside .button-link, change background from var(--accent) to #0b3d91. Do not change anything else." --apply
+uv run python scripts/run_edit_flow.py --target-page index.html --instruction "Change the Start a project button to red." --apply
 
 # One staging-only specialist preview
-uv run python scripts/run_specialist.py --specialist css --target-page index.html --task "In style.css, inside .button-link, change background from var(--accent) to #0b3d91."
+uv run python scripts/run_specialist.py --specialist css --target-page index.html --task "Make the home page hero section shorter."
 
 # Read-only SEO diagnosis through the full Flow
 uv run python scripts/run_edit_flow.py --target-page index.html --instruction "Diagnose this page's source SEO without editing it." --apply
@@ -155,6 +155,7 @@ Runtime staging is under `sites/staging/`; raw Lighthouse reports, screenshots, 
 
 - The committed fixed sample site only; no arbitrary uploads or live-site editing.
 - Static HTML, one shared plain CSS file, and narrow SEO work only.
+- Semantic CSS edits are limited to targets and operations in the fixed component catalog.
 - No JavaScript, backend, framework, Accessibility Agent, or Content Agent.
 - Lighthouse SEO category only; screenshots do not influence QA.
 - One desktop screenshot viewport; no pixel-diff scoring.

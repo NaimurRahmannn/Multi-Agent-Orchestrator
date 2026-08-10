@@ -21,6 +21,7 @@ from agentorchestra.pipeline_models import (
 )
 from agentorchestra.screenshot_models import ScreenshotArtifact
 from agentorchestra.seo_models import LighthouseSEOResult
+from agentorchestra.services.computed_styles import verify_computed_style_evidence
 from agentorchestra.services.lighthouse import run_lighthouse_seo
 from agentorchestra.services.metrics import build_run_metrics
 from agentorchestra.services.promotion import promote_staged_copy
@@ -40,6 +41,7 @@ from agentorchestra.services.workspace import (
     get_workspace_handle,
 )
 from agentorchestra.specialist_models import SpecialistExecutionReport
+from agentorchestra.style_models import StyleChangeEvidence
 from agentorchestra.workspace_models import DiffReport, WorkspaceHandle
 
 from . import transitions
@@ -63,6 +65,7 @@ LighthouseRunner = Callable[..., LighthouseSEOResult]
 ScreenshotCapture = Callable[..., ScreenshotArtifact]
 TimelineRecorderFactory = Callable[..., RunTimelineRecorder]
 MetricsBuilder = Callable[[EditRunReport, RunTimeline], RunMetrics]
+ComputedStyleVerifier = Callable[..., list[StyleChangeEvidence]]
 
 
 @dataclass(frozen=True)
@@ -85,6 +88,7 @@ class AgentOrchestraFlowDependencies:
     screenshot_capture: ScreenshotCapture | None = None
     timeline_recorder_factory: TimelineRecorderFactory = RunTimelineRecorder
     metrics_builder: MetricsBuilder = build_run_metrics
+    computed_style_verifier: ComputedStyleVerifier | None = None
     clock: Callable[[], float] = time.perf_counter
 
 
@@ -99,6 +103,7 @@ def build_production_flow_dependencies(
         specialist_service=SpecialistExecutionService(settings=resolved),
         qa_runner=QARunner(settings=resolved),
         screenshot_capture=capture_page_screenshot,
+        computed_style_verifier=verify_computed_style_evidence,
     )
 
 
@@ -129,6 +134,7 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
         screenshot_capture: ScreenshotCapture | None = None,
         timeline_recorder_factory: TimelineRecorderFactory = RunTimelineRecorder,
         metrics_builder: MetricsBuilder = build_run_metrics,
+        computed_style_verifier: ComputedStyleVerifier | None = None,
         clock: Callable[[], float] = time.perf_counter,
     ) -> None:
         resolved_settings = settings or (dependencies.settings if dependencies else get_settings())
@@ -150,6 +156,7 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
             screenshot_capture=screenshot_capture,
             timeline_recorder_factory=timeline_recorder_factory,
             metrics_builder=metrics_builder,
+            computed_style_verifier=computed_style_verifier,
             clock=clock,
         )
         super().__init__(
@@ -200,10 +207,25 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
     def execute_specialists(self) -> SpecialistExecutionReport | None:
         return transitions.execute_specialists(self)
 
-    @router(execute_specialists, emit=["blocked", "failed", "verification_ready"])
+    @router(
+        execute_specialists,
+        emit=[
+            "specialist_clarification",
+            "already_satisfied",
+            "blocked",
+            "failed",
+            "verification_ready",
+        ],
+    )
     def route_specialist_result(
         self,
-    ) -> Literal["blocked", "failed", "verification_ready"]:
+    ) -> Literal[
+        "specialist_clarification",
+        "already_satisfied",
+        "blocked",
+        "failed",
+        "verification_ready",
+    ]:
         return transitions.route_specialist_result(self)
 
     @listen("verification_ready")
@@ -251,6 +273,14 @@ class AgentOrchestraFlow(Flow[AgentOrchestraFlowState]):
     @listen("blocked")
     def finalize_blocked(self) -> EditRunReport:
         return transitions.finalize_blocked(self)
+
+    @listen("specialist_clarification")
+    def finalize_specialist_clarification(self) -> EditRunReport:
+        return transitions.finalize_specialist_clarification(self)
+
+    @listen("already_satisfied")
+    def finalize_already_satisfied(self) -> EditRunReport:
+        return transitions.finalize_already_satisfied(self)
 
     @listen("rejected")
     def finalize_rejected(self) -> EditRunReport:

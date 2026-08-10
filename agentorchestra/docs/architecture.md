@@ -11,10 +11,12 @@ flowchart TB
     FLOW --> MAN[Manager: routing only]
     MAN --> FLOW
     FLOW --> HTML[HTML specialist]
-    FLOW --> CSS[CSS specialist]
+    FLOW --> CSS[CSS semantic planner]
     FLOW --> SEO[SEO specialist]
     HTML --> TOOLS[Workspace-bound read / exact patch]
-    CSS --> CSS_TOOLS[Bound read / structured declaration update / exact patch]
+    CSS --> CATALOG[Trusted component catalog]
+    CATALOG --> COMPILER[Deterministic style compiler]
+    COMPILER --> CSS_TOOLS[Bound declaration update]
     CSS_TOOLS --> STAGE
     SEO -->|edit| TOOLS
     SEO -->|diagnostic| READ[Bound read only]
@@ -48,11 +50,11 @@ sequenceDiagram
     Flow->>Stage: copy working
     Flow->>Screenshots: capture Before
     Flow->>Specialist: run selected roles sequentially
-    Specialist->>Stage: bound exact patches
+    Specialist->>Stage: bound exact patches or compiled style intent
     opt SEO selected
         Flow->>Lighthouse: SEO-only staged audit
     end
-    Flow->>Flow: validate diff, evidence, content digest
+    Flow->>Flow: validate diff, semantic/computed evidence, content digest
     Flow->>Screenshots: capture proposed-after
     Note over Screenshots,QA: Screenshots are not QA evidence
     Flow->>QA: deterministic evidence bundle
@@ -73,7 +75,8 @@ SEO diagnostic mode branches after Lighthouse: it returns findings, skips propos
 flowchart LR
     M[Manager<br/>routing only] -->|no tools| NONE1[ ]
     H[HTML<br/>structure and attributes] --> RP[read_file + propose_patch<br/>target HTML]
-    C[CSS<br/>visual presentation] --> RC[read HTML/CSS + structured declaration update<br/>or exact patch to style.css]
+    C[CSS<br/>semantic planner] --> CAT[allowlisted component + operation plan]
+    CAT --> RC[trusted compiler + atomic declaration update<br/>to style.css]
     S[SEO edit<br/>metadata] --> RS[read + patch target HTML]
     SD[SEO diagnostic<br/>source findings] --> RO[read_file only]
     Q[QA<br/>evidence evaluation] -->|no tools| NONE2[ ]
@@ -81,13 +84,16 @@ flowchart LR
 
 All agents use `allow_delegation=False`. Manager never reads files or invokes specialists. QA is never a selectable specialist.
 
-The CSS specialist prefers `update_css_declaration` for changing an existing property in a
-unique, simple rule. The tool accepts a selector, property, and new value, then delegates the
-actual mutation to the same exact-match, ownership-checked, atomic staged patch service. It
-intentionally rejects missing or repeated selectors/properties, grouped or multiline rules it
-cannot identify safely, no-op values, and values that attempt to add extra declarations. CSS
-insertions, removals, grouped-selector overrides, and other structural changes continue to use
-`propose_patch` with bounded read evidence.
+The CSS path separates interpretation from mutation. Common plain-language requests first use a
+deterministic parser; uncommon requests use a one-turn, tool-free planner. Both produce a strict
+`StyleIntentPlan` containing a catalog target ID and allowlisted operation, never raw CSS. Trusted
+code resolves that target to a selector/property, normalizes colors or design-token steps, and
+calls the atomic `update_css_declaration` service. Missing or ambiguous targets become a specific
+clarification question. A semantically equal value becomes `already_satisfied`, not a block.
+
+The component catalog is deliberately fixed-site-specific. Supporting a new component or visual
+operation requires an explicit catalog entry and compiler mapping. This trades unrestricted CSS
+generation for predictable edits, lower CSS token use, stronger ownership, and testable behavior.
 
 ## File lifecycle
 
@@ -117,6 +123,7 @@ flowchart LR
     DIFF[Deterministic unified diff] --> BUNDLE
     LH[Optional normalized Lighthouse SEO] --> BUNDLE
     DIGEST[Site + evidence digests] --> BUNDLE
+    STYLE[Semantic source + optional browser-computed style evidence] --> BUNDLE
     BUNDLE --> QA[QA criterion evaluation]
     QA --> RESULT[accept or reject]
     SHOT[Screenshots] -. presentation only .-> UI[UI]
@@ -141,6 +148,8 @@ flowchart TD
     RBS -->|specialists_ready| SPEC[execute_specialists]
     RBS -->|failed| FF
     SPEC --> RS{route_specialist_result}
+    RS -->|clarification| FSC[finalize_specialist_clarification]
+    RS -->|already_satisfied| FAS[finalize_already_satisfied]
     RS -->|blocked| FB[finalize_blocked]
     RS -->|failed| FF
     RS -->|verification_ready| LH[run_seo_verification]
@@ -176,6 +185,8 @@ Screenshot failures normally become warnings and the transition continues; safet
 ## Failure behavior
 
 - Zero-match, multiple-match, no-op, unauthorized, or oversized patches are rejected with deterministic evidence.
+- A specialist clarification returns its exact question and discards untouched staging.
+- An already-satisfied style request returns a successful no-op outcome without QA or promotion.
 - A blocked/failed specialist stops later specialists and discards staging.
 - Lighthouse failure stops SEO verification without crashing the UI.
 - A normal screenshot failure is a warning; screenshots never decide QA.

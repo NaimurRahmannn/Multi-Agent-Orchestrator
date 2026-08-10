@@ -25,12 +25,15 @@ from agentorchestra.models import (
     TokenUsage,
 )
 from agentorchestra.seo_models import SEOCompletion, SEOCompletionStatus, SEOExecutionMode
+from agentorchestra.style_models import StyleChangeEvidence, StyleIntentPlan
 from agentorchestra.workspace_models import DiffReport, PatchExecutionResult, PatchStatus
 
 
 class SpecialistCompletionStatus(StrEnum):
     COMPLETED = "completed"
     BLOCKED = "blocked"
+    CLARIFICATION_REQUIRED = "clarification_required"
+    ALREADY_SATISFIED = "already_satisfied"
 
 
 class SpecialistCompletion(AgentOrchestraModel):
@@ -39,23 +42,33 @@ class SpecialistCompletion(AgentOrchestraModel):
     status: SpecialistCompletionStatus
     summary: StrictStr = Field(min_length=1, max_length=MAX_SUMMARY_LENGTH)
     remaining_issue: StrictStr | None = Field(default=None, max_length=MAX_REASON_LENGTH)
+    clarification_question: StrictStr | None = Field(default=None, max_length=MAX_REASON_LENGTH)
 
-    @field_validator("summary", "remaining_issue", mode="before")
+    @field_validator("summary", "remaining_issue", "clarification_question", mode="before")
     @classmethod
     def strip_text_fields(cls, value: object) -> object:
         return value.strip() if isinstance(value, str) else value
 
     @model_validator(mode="after")
     def validate_status_contract(self) -> SpecialistCompletion:
-        if self.status is SpecialistCompletionStatus.COMPLETED and self.remaining_issue is not None:
-            raise ValueError("completed specialist output must not include a remaining issue.")
-        if self.status is SpecialistCompletionStatus.BLOCKED and not self.remaining_issue:
-            raise ValueError("blocked specialist output must include a remaining issue.")
+        if self.status in {
+            SpecialistCompletionStatus.COMPLETED,
+            SpecialistCompletionStatus.ALREADY_SATISFIED,
+        }:
+            if self.remaining_issue is not None or self.clarification_question is not None:
+                raise ValueError("successful specialist output cannot include an issue or question.")
+        elif self.status is SpecialistCompletionStatus.BLOCKED:
+            if not self.remaining_issue or self.clarification_question is not None:
+                raise ValueError("blocked specialist output requires only a remaining issue.")
+        elif not self.clarification_question or self.remaining_issue is not None:
+            raise ValueError("clarification specialist output requires only one question.")
         return self
 
 
 class SpecialistRunStatus(StrEnum):
     SUCCEEDED = "succeeded"
+    ALREADY_SATISFIED = "already_satisfied"
+    CLARIFICATION_REQUIRED = "clarification_required"
     BLOCKED = "blocked"
     FAILED = "failed"
 
@@ -74,6 +87,8 @@ class SpecialistRunResult(AgentOrchestraModel):
     token_usage: TokenUsage = Field(default_factory=TokenUsage)
     model: StrictStr = Field(min_length=1, max_length=160)
     error: StrictStr | None = Field(default=None, max_length=1_000)
+    style_plan: StyleIntentPlan | None = None
+    style_changes: list[StyleChangeEvidence] = Field(default_factory=list)
 
     @field_validator("assignment", "model", "error", mode="before")
     @classmethod
@@ -92,6 +107,8 @@ class SpecialistRunResult(AgentOrchestraModel):
                 raise ValueError("SEO completion mode must match the runtime mode.")
         else:
             raise ValueError("unsupported specialist run.")
+        if self.specialist is not SpecialistName.CSS and (self.style_plan or self.style_changes):
+            raise ValueError("Only CSS runs may contain semantic style evidence.")
 
         applied = [result for result in self.patch_results if result.status is PatchStatus.APPLIED]
         rejected = [
@@ -132,6 +149,21 @@ class SpecialistRunResult(AgentOrchestraModel):
                 raise ValueError("blocked runs must not include an error.")
             if self.completion is None or self.completion.status.value != "blocked":
                 raise ValueError("blocked runs require a blocked specialist completion.")
+        elif self.status is SpecialistRunStatus.CLARIFICATION_REQUIRED:
+            if applied or self.applied_patch_count or self.error is not None:
+                raise ValueError("clarification runs cannot apply patches or include errors.")
+            if (
+                self.completion is None
+                or self.completion.status.value != "clarification_required"
+            ):
+                raise ValueError("clarification runs require a clarification completion.")
+        elif self.status is SpecialistRunStatus.ALREADY_SATISFIED:
+            if applied or self.patch_results or self.error is not None:
+                raise ValueError("already-satisfied runs cannot include patches or errors.")
+            if self.completion is None or self.completion.status.value != "already_satisfied":
+                raise ValueError("already-satisfied runs require matching completion evidence.")
+            if self.specialist is SpecialistName.CSS and not self.style_changes:
+                raise ValueError("already-satisfied CSS runs require style evidence.")
         elif not self.error:
             raise ValueError("failed runs must include an error.")
         return self
@@ -139,6 +171,8 @@ class SpecialistRunResult(AgentOrchestraModel):
 
 class SpecialistExecutionStatus(StrEnum):
     SUCCEEDED = "succeeded"
+    ALREADY_SATISFIED = "already_satisfied"
+    CLARIFICATION_REQUIRED = "clarification_required"
     PARTIAL = "partial"
     BLOCKED = "blocked"
     FAILED = "failed"
@@ -205,8 +239,23 @@ def _execution_status(
 ) -> SpecialistExecutionStatus:
     statuses = [result.status for result in results]
     succeeded = sum(status is SpecialistRunStatus.SUCCEEDED for status in statuses)
-    if succeeded and succeeded == len(statuses) and all_selected:
+    satisfied = sum(
+        status in {
+            SpecialistRunStatus.SUCCEEDED,
+            SpecialistRunStatus.ALREADY_SATISFIED,
+        }
+        for status in statuses
+    )
+    if succeeded and satisfied == len(statuses) and all_selected:
         return SpecialistExecutionStatus.SUCCEEDED
+    if any(status is SpecialistRunStatus.CLARIFICATION_REQUIRED for status in statuses):
+        return SpecialistExecutionStatus.CLARIFICATION_REQUIRED
+    if (
+        statuses
+        and all(status is SpecialistRunStatus.ALREADY_SATISFIED for status in statuses)
+        and all_selected
+    ):
+        return SpecialistExecutionStatus.ALREADY_SATISFIED
     if succeeded:
         return SpecialistExecutionStatus.PARTIAL
     if any(status is SpecialistRunStatus.FAILED for status in statuses):

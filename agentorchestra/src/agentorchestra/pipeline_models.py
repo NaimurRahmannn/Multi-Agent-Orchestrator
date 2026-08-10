@@ -37,6 +37,7 @@ from agentorchestra.specialist_models import (
     SpecialistExecutionReport,
     SpecialistExecutionStatus,
 )
+from agentorchestra.style_models import StyleChangeEvidence
 from agentorchestra.workspace_models import DiffReport
 
 
@@ -58,6 +59,7 @@ class QARunResult(AgentOrchestraModel):
 
 class EditOutcomeStatus(StrEnum):
     ACCEPTED = "accepted"
+    ALREADY_SATISFIED = "already_satisfied"
     REJECTED = "rejected"
     CLARIFICATION_REQUIRED = "clarification_required"
     OUT_OF_SCOPE = "out_of_scope"
@@ -97,6 +99,7 @@ class QASpecialistEvidence(AgentOrchestraModel):
     patch_results: list[QAPatchEvidence] = Field(default_factory=list)
     seo_mode: SEOExecutionMode | None = None
     seo_findings: list[SEOFinding] = Field(default_factory=list)
+    style_changes: list[StyleChangeEvidence] = Field(default_factory=list)
 
     @field_validator("changed_files")
     @classmethod
@@ -110,6 +113,8 @@ class QASpecialistEvidence(AgentOrchestraModel):
                 raise ValueError("SEO QA evidence supports edit mode without diagnostic findings.")
         elif self.seo_mode is not None or self.seo_findings:
             raise ValueError("Non-SEO evidence must not contain SEO fields.")
+        if self.specialist is not SpecialistName.CSS and self.style_changes:
+            raise ValueError("Only CSS QA evidence may contain semantic style changes.")
         return self
 
 
@@ -317,14 +322,20 @@ class EditRunReport(AgentOrchestraModel):
             self._validate_accepted()
         elif self.status is EditOutcomeStatus.REJECTED:
             self._validate_rejected()
+        elif self.status is EditOutcomeStatus.CLARIFICATION_REQUIRED:
+            if self.specialist_report is None:
+                self._validate_no_execution()
+            else:
+                self._validate_post_staging_clarification()
         elif self.status in {
-            EditOutcomeStatus.CLARIFICATION_REQUIRED,
             EditOutcomeStatus.OUT_OF_SCOPE,
             EditOutcomeStatus.UNSUPPORTED_SPECIALIST,
         }:
             self._validate_no_execution()
         elif self.status is EditOutcomeStatus.BLOCKED:
             self._validate_blocked()
+        elif self.status is EditOutcomeStatus.ALREADY_SATISFIED:
+            self._validate_already_satisfied()
         elif self.status is EditOutcomeStatus.DIAGNOSTIC_COMPLETED:
             self._validate_diagnostic_completed()
         elif self.status is EditOutcomeStatus.FAILED and not self.error:
@@ -447,6 +458,34 @@ class EditRunReport(AgentOrchestraModel):
             raise ValueError("blocked outcomes must leave working unchanged.")
         if not self.staging_cleaned and not self.cleanup_warnings:
             raise ValueError("unclean blocked outcomes must include a cleanup warning.")
+
+    def _validate_post_staging_clarification(self) -> None:
+        if self.manager_result is None or self.plan is None or not self.run_id:
+            raise ValueError("post-staging clarification requires manager, plan, and run ID.")
+        if (
+            self.specialist_report is None
+            or self.specialist_report.status
+            is not SpecialistExecutionStatus.CLARIFICATION_REQUIRED
+        ):
+            raise ValueError("post-staging clarification requires specialist clarification evidence.")
+        if self.qa_run is not None or self.working_updated:
+            raise ValueError("clarification must not run QA or update working.")
+        if not self.staging_cleaned and not self.cleanup_warnings:
+            raise ValueError("unclean clarification must include a cleanup warning.")
+
+    def _validate_already_satisfied(self) -> None:
+        if self.manager_result is None or self.plan is None or not self.run_id:
+            raise ValueError("already-satisfied outcomes require manager, plan, and run ID.")
+        if (
+            self.specialist_report is None
+            or self.specialist_report.status is not SpecialistExecutionStatus.ALREADY_SATISFIED
+            or not self.specialist_report.diff_report.is_empty
+        ):
+            raise ValueError("already-satisfied outcomes require empty semantic specialist evidence.")
+        if self.qa_run is not None or self.working_updated:
+            raise ValueError("already-satisfied outcomes must not run QA or update working.")
+        if not self.staging_cleaned and not self.cleanup_warnings:
+            raise ValueError("unclean already-satisfied outcomes require a cleanup warning.")
 
     def _validate_diagnostic_completed(self) -> None:
         if self.manager_result is None or self.plan is None or not self.run_id:

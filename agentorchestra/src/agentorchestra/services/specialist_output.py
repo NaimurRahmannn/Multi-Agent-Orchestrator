@@ -9,6 +9,7 @@ from pydantic import BaseModel, ValidationError
 from agentorchestra.exceptions import SpecialistOutputError
 from agentorchestra.seo_models import SEOCompletion
 from agentorchestra.specialist_models import SpecialistCompletion
+from agentorchestra.style_models import StyleIntentPlan
 
 
 def extract_specialist_completion(output: Any) -> SpecialistCompletion:
@@ -32,6 +33,18 @@ def extract_seo_completion(output: Any) -> SEOCompletion:
     except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
         raise SpecialistOutputError(
             "SEO response did not match the structured completion contract."
+        ) from exc
+
+
+def extract_style_intent_plan(output: Any) -> StyleIntentPlan:
+    """Extract one strict semantic CSS plan without repairing unsupported output."""
+    try:
+        return _extract_model(output, StyleIntentPlan)
+    except SpecialistOutputError:
+        raise
+    except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        raise SpecialistOutputError(
+            "CSS specialist response did not match the semantic style plan contract."
         ) from exc
 
 

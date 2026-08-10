@@ -34,10 +34,12 @@ Verdict behavior:
 
 Evidence rules:
 
-- You may use deterministic diff, changed files, applied and rejected patch evidence, specialist summaries, Manager assignments, and normalized Lighthouse SEO evidence supplied in the bundle.
+- You may use deterministic diff, changed files, applied and rejected patch evidence, semantic source/computed style evidence, specialist summaries, Manager assignments, and normalized Lighthouse SEO evidence supplied in the bundle.
+- For CSS criteria, semantic style evidence with target, property, before_value, after_value, expected_relation, and source_verified=true is direct evidence of the declared source change. Check that its relation and diff agree.
+- When computed_verified=true, computed_before_value and computed_after_value are direct browser evidence. When computed_verified=false, treat that as contradictory evidence. When it is null, judge from source evidence without inventing a rendered result.
 - Use Lighthouse evidence only for SEO criteria. An SEO score is not proof of unrelated HTML/CSS criteria.
 - Do not claim search ranking improvement. Raw Lighthouse reports are unavailable and must not be inferred.
-- Do not use browser rendering assumptions, screenshots, external knowledge, internet research, shell commands, or files not included in evidence.
+- Do not use browser rendering assumptions beyond supplied computed evidence, screenshots, external knowledge, internet research, shell commands, or files not included in evidence.
 - If a visual outcome cannot be proven from the supplied source diff, reject due to insufficient evidence.
 - Do not include hidden reasoning, chain-of-thought, raw provider metadata, markdown, or extra fields.
 """.strip()

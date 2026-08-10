@@ -51,7 +51,11 @@ def validate_execution_evidence(
     result_specialists = [result.specialist for result in results]
     if result_specialists != selected:
         raise ExecutionEvidenceError("Specialist results must exactly match selected order.")
-    if any(result.status is not SpecialistRunStatus.SUCCEEDED for result in results):
+    if any(
+        result.status
+        not in {SpecialistRunStatus.SUCCEEDED, SpecialistRunStatus.ALREADY_SATISFIED}
+        for result in results
+    ):
         raise ExecutionEvidenceError("Every selected specialist must succeed before QA.")
 
     applied = [
@@ -75,6 +79,8 @@ def validate_execution_evidence(
         _validate_evidence_path(file_diff.file)
 
     for result in results:
+        if any(not change.source_verified for change in result.style_changes):
+            raise ExecutionEvidenceError("CSS semantic evidence must be source verified.")
         _validate_result_ownership(
             result.specialist,
             result.patch_results,
@@ -124,6 +130,7 @@ def build_qa_evidence_bundle(
                 patch_results=[_patch_evidence(patch) for patch in result.patch_results],
                 seo_mode=result.mode if result.specialist is SpecialistName.SEO else None,
                 seo_findings=seo_completion.findings if seo_completion is not None else [],
+                style_changes=result.style_changes,
             )
         )
     payload = {

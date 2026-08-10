@@ -268,6 +268,48 @@ def test_flow_blocks_before_qa_on_specialist_block(tmp_path):
     assert report.staging_cleaned is True
 
 
+def test_flow_returns_specialist_clarification_instead_of_generic_block(tmp_path):
+    settings = make_settings(tmp_path)
+    plan = execute_plan("css")
+    specialists = FakeSpecialists(("clarification_required",))
+    specialists.settings = settings
+    qa = FakeQA()
+
+    report = AgentOrchestraFlow(
+        settings=settings,
+        router=FakeRouter(plan),
+        specialist_service=specialists,
+        qa_runner=qa,
+    ).kickoff(inputs={"request": {"target_page": "index.html", "instruction": "Round it."}})
+
+    assert report.status == "clarification_required"
+    assert report.message == "Which button should change?"
+    assert report.staging_cleaned is True
+    assert not qa.calls
+
+
+def test_flow_returns_already_satisfied_without_qa_or_promotion(tmp_path):
+    settings = make_settings(tmp_path)
+    plan = execute_plan("css")
+    specialists = FakeSpecialists(("already_satisfied",))
+    specialists.settings = settings
+    qa = FakeQA()
+
+    report = AgentOrchestraFlow(
+        settings=settings,
+        router=FakeRouter(plan),
+        specialist_service=specialists,
+        qa_runner=qa,
+    ).kickoff(
+        inputs={"request": {"target_page": "index.html", "instruction": "Keep it green."}}
+    )
+
+    assert report.status == "already_satisfied"
+    assert report.working_updated is False
+    assert report.staging_cleaned is True
+    assert not qa.calls
+
+
 def test_flow_fails_when_staging_changes_after_qa(tmp_path):
     settings = make_settings(tmp_path)
     plan = execute_plan("css")

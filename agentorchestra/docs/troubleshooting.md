@@ -54,7 +54,9 @@ Never paste keys into logs or issue text.
 - **Port already in use:** stop the previous Streamlit process before relaunching.
 - **Application reruns:** Streamlit reruns on widget interaction; the latest report is kept only in session state.
 - **Confirmation required:** select the execution or reset checkbox before its button.
-- **Run appears blocked:** review Manager clarification, specialist remaining issue, rejected patches, and the timeline.
+- **CSS asks a question:** answer the displayed target/outcome question and submit the request again; ambiguous style requests are not reported as generic blocks.
+- **CSS says already satisfied:** no patch, QA, or promotion is needed because semantic source evidence matches the request.
+- **Run appears blocked:** review Manager clarification, specialist remaining issue, rejected patches, semantic style evidence, and the timeline.
 - **Stale report/configuration:** stop with `Ctrl+C` and restart after `.env` or code changes. Reset clears the displayed report after success.
 
 ## Workspace and patches

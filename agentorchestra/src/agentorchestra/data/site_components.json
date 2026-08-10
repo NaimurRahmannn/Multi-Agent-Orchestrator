@@ -1,0 +1,108 @@
+{
+  "components": [
+    {
+      "id": "index.page",
+      "page": "index.html",
+      "selector": "body",
+      "label": "home page",
+      "aliases": ["page background", "home page background", "home page"],
+      "operations": {"set_background_color": "background"}
+    },
+    {
+      "id": "index.hero",
+      "page": "index.html",
+      "selector": ".hero-section",
+      "label": "home page hero section",
+      "aliases": ["home page hero section", "hero section", "hero"],
+      "operations": {"set_height": "min-height", "increase_height": "min-height", "decrease_height": "min-height", "set_gap": "gap", "increase_gap": "gap", "decrease_gap": "gap", "set_padding": "padding", "increase_padding": "padding", "decrease_padding": "padding"}
+    },
+    {
+      "id": "index.hero.project_cta",
+      "page": "index.html",
+      "selector": ".button-link",
+      "label": "Start a project button",
+      "aliases": ["start a project button", "start a project", "project button", "call-to-action button", "button"],
+      "operations": {"set_background_color": "background", "set_text_color": "color", "set_border_radius": "border-radius", "increase_border_radius": "border-radius", "decrease_border_radius": "border-radius", "set_padding": "padding", "increase_padding": "padding", "decrease_padding": "padding"}
+    },
+    {
+      "id": "index.services",
+      "page": "index.html",
+      "selector": ".service-list",
+      "label": "service card list",
+      "aliases": ["service cards", "service card list", "services"],
+      "operations": {"set_gap": "gap", "increase_gap": "gap", "decrease_gap": "gap"}
+    },
+    {
+      "id": "about.content",
+      "page": "about.html",
+      "selector": ".content-page",
+      "label": "About page main content",
+      "aliases": ["about page content", "main content", "about page"],
+      "operations": {"set_padding": "padding", "increase_padding": "padding", "decrease_padding": "padding"}
+    },
+    {
+      "id": "about.page",
+      "page": "about.html",
+      "selector": "body",
+      "label": "About page",
+      "aliases": ["about page background", "page background", "about page"],
+      "operations": {"set_background_color": "background"}
+    },
+    {
+      "id": "contact.page",
+      "page": "contact.html",
+      "selector": "body",
+      "label": "Contact page",
+      "aliases": ["contact page background", "page background", "contact page"],
+      "operations": {"set_background_color": "background"}
+    },
+    {
+      "id": "contact.form",
+      "page": "contact.html",
+      "selector": ".contact-form",
+      "label": "contact form",
+      "aliases": ["contact form fields", "form fields", "contact form", "form"],
+      "operations": {"set_gap": "gap", "increase_gap": "gap", "decrease_gap": "gap"}
+    },
+    {
+      "id": "contact.form.submit",
+      "page": "contact.html",
+      "selector": ".button-link",
+      "label": "Send message button",
+      "aliases": ["send message button", "send button", "submit button", "button"],
+      "operations": {"set_background_color": "background", "set_text_color": "color", "set_border_radius": "border-radius", "increase_border_radius": "border-radius", "decrease_border_radius": "border-radius", "set_padding": "padding", "increase_padding": "padding", "decrease_padding": "padding"}
+    },
+    {
+      "id": "shared.brand",
+      "page": "*",
+      "selector": ".brand",
+      "label": "site brand name",
+      "aliases": ["brand name", "site brand", "brand"],
+      "operations": {"set_text_color": "color", "set_font_size": "font-size", "increase_font_size": "font-size", "decrease_font_size": "font-size"}
+    },
+    {
+      "id": "shared.navigation",
+      "page": "*",
+      "selector": ".site-nav",
+      "label": "navigation links",
+      "aliases": ["navigation links", "nav links", "navigation", "nav"],
+      "operations": {"set_gap": "gap", "increase_gap": "gap", "decrease_gap": "gap"}
+    },
+    {
+      "id": "shared.header",
+      "page": "*",
+      "selector": ".site-header",
+      "label": "site header",
+      "aliases": ["site header", "header"],
+      "operations": {"set_background_color": "background", "set_gap": "gap", "increase_gap": "gap", "decrease_gap": "gap", "set_padding": "padding", "increase_padding": "padding", "decrease_padding": "padding"}
+    },
+    {
+      "id": "shared.footer",
+      "page": "*",
+      "selector": ".site-footer",
+      "label": "site footer",
+      "aliases": ["site footer", "footer"],
+      "operations": {"set_background_color": "background", "set_text_color": "color", "set_padding": "padding", "increase_padding": "padding", "decrease_padding": "padding"}
+    }
+  ]
+}

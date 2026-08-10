@@ -65,6 +65,30 @@ def build_patch_rows(report: EditRunReport) -> list[dict[str, object]]:
     ]
 
 
+def build_style_rows(report: EditRunReport) -> list[dict[str, object]]:
+    if report.specialist_report is None:
+        return []
+    return [
+        {
+            "target": change.label,
+            "target_id": change.target_id,
+            "selector": change.selector,
+            "property": change.property_name,
+            "before": change.before_value,
+            "after": change.after_value,
+            "expected": change.expected_relation,
+            "source_verified": change.source_verified,
+            "computed_verified": (
+                change.computed_verified
+                if change.computed_verified is not None
+                else "unavailable"
+            ),
+        }
+        for result in report.specialist_report.results
+        for change in result.style_changes
+    ]
+
+
 def build_qa_rows(report: EditRunReport) -> list[dict[str, str]]:
     if report.qa_run is None:
         return []

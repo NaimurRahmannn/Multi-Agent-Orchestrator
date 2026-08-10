@@ -14,19 +14,23 @@ from agentorchestra.agents.manager import (
 from agentorchestra.agents.seo_agent import build_seo_agent, build_seo_task
 from agentorchestra.agents.specialist_support import build_specialist_crew
 from agentorchestra.config import GroqAgentName, GroqConfiguration, Settings, get_settings
-from agentorchestra.exceptions import UnsupportedSpecialistError
+from agentorchestra.exceptions import SpecialistOutputError, UnsupportedSpecialistError
 from agentorchestra.models import EditRequest, SpecialistAssignment, SpecialistName, TokenUsage
 from agentorchestra.seo_models import SEOCompletion, SEOExecutionMode
 from agentorchestra.services.specialist_output import (
     extract_seo_completion,
     extract_specialist_completion,
+    extract_style_intent_plan,
 )
+from agentorchestra.services.style_catalog import deterministic_style_plan
+from agentorchestra.services.style_compiler import execute_style_plan
 from agentorchestra.services.workspace import read_file, validate_staged_site
 from agentorchestra.specialist_models import (
     SpecialistCompletion,
     SpecialistRunResult,
     SpecialistRunStatus,
 )
+from agentorchestra.style_models import StyleChangeEvidence, StyleIntentPlan
 from agentorchestra.tools import PatchEvidenceRecorder
 from agentorchestra.workspace_models import PatchExecutionResult, PatchStatus, WorkspaceHandle
 
@@ -110,6 +114,10 @@ class SpecialistRunner:
         crew: Any = None
         groq: GroqConfiguration | None = None
         error: str | None = None
+        semantic_status: SpecialistRunStatus | None = None
+        style_plan: StyleIntentPlan | None = None
+        style_changes: list[StyleChangeEvidence] = []
+        deterministic_model = False
 
         try:
             validate_staged_site(workspace)
@@ -120,46 +128,115 @@ class SpecialistRunner:
                 end_line=1,
                 allowed_files=(validated_request.target_page,),
             )
-            groq = self._resolve_groq(specialist)
             recorder = self._recorder_factory()
-            agent_kwargs = {
-                "workspace": workspace,
-                "target_page": validated_request.target_page,
-                "recorder": recorder,
-                "groq": groq,
-                "verbose": self._verbose,
-            }
-            if specialist is SpecialistName.SEO:
-                agent_kwargs["mode"] = validated_mode
-            agent = self._agent_factories[specialist](
-                **agent_kwargs,
-            )
-            task_kwargs = {
-                "agent": agent,
-                "request": validated_request,
-                "assignment": validated_assignment,
-                "acceptance_criteria": acceptance_criteria,
-            }
-            if specialist is SpecialistName.SEO:
-                task_kwargs["mode"] = validated_mode
-            task = self._task_factories[specialist](
-                **task_kwargs,
-            )
-            crew = self._crew_factory(agent, task)
-            disable_crewai_prompt_cache_breakpoints()
-            output = self._crew_executor(
-                crew,
-                {
+            if specialist is SpecialistName.CSS:
+                style_plan = deterministic_style_plan(
+                    target_page=validated_request.target_page,
+                    instruction=validated_request.instruction,
+                )
+                if style_plan is None:
+                    groq = self._resolve_groq(specialist)
+                    agent = self._agent_factories[specialist](
+                        workspace=workspace,
+                        target_page=validated_request.target_page,
+                        recorder=recorder,
+                        groq=groq,
+                        verbose=self._verbose,
+                    )
+                    task = self._task_factories[specialist](
+                        agent=agent,
+                        request=validated_request,
+                        assignment=validated_assignment,
+                        acceptance_criteria=acceptance_criteria,
+                    )
+                    crew = self._crew_factory(agent, task)
+                    disable_crewai_prompt_cache_breakpoints()
+                    output = self._crew_executor(
+                        crew,
+                        {
+                            "target_page": validated_request.target_page,
+                            "instruction": validated_request.instruction,
+                            "assignment": validated_assignment.task,
+                        },
+                    )
+                    try:
+                        style_plan = extract_style_intent_plan(output)
+                    except SpecialistOutputError:
+                        completion = extract_specialist_completion(output)
+                else:
+                    deterministic_model = True
+                if style_plan is not None:
+                    style_result = execute_style_plan(
+                        style_plan,
+                        target_page=validated_request.target_page,
+                        workspace=workspace,
+                    )
+                    if style_result.patch is not None:
+                        recorder.record(style_result.patch)
+                    if style_result.evidence is not None:
+                        style_changes.append(style_result.evidence)
+                    if style_result.status.value == "applied":
+                        semantic_status = SpecialistRunStatus.SUCCEEDED
+                        completion = SpecialistCompletion(
+                            status="completed",
+                            summary=style_result.summary,
+                        )
+                    elif style_result.status.value == "already_satisfied":
+                        semantic_status = SpecialistRunStatus.ALREADY_SATISFIED
+                        completion = SpecialistCompletion(
+                            status="already_satisfied",
+                            summary=style_result.summary,
+                        )
+                    elif style_result.status.value == "clarification_required":
+                        semantic_status = SpecialistRunStatus.CLARIFICATION_REQUIRED
+                        completion = SpecialistCompletion(
+                            status="clarification_required",
+                            summary=style_result.summary,
+                            clarification_question=style_result.clarification_question,
+                        )
+                    else:
+                        semantic_status = SpecialistRunStatus.BLOCKED
+                        completion = SpecialistCompletion(
+                            status="blocked",
+                            summary=style_result.summary,
+                            remaining_issue=style_result.remaining_issue,
+                        )
+            else:
+                groq = self._resolve_groq(specialist)
+                agent_kwargs = {
+                    "workspace": workspace,
                     "target_page": validated_request.target_page,
-                    "instruction": validated_request.instruction,
-                    "assignment": validated_assignment.task,
-                },
-            )
-            completion = (
-                extract_seo_completion(output)
-                if specialist is SpecialistName.SEO
-                else extract_specialist_completion(output)
-            )
+                    "recorder": recorder,
+                    "groq": groq,
+                    "verbose": self._verbose,
+                }
+                if specialist is SpecialistName.SEO:
+                    agent_kwargs["mode"] = validated_mode
+                agent = self._agent_factories[specialist](**agent_kwargs)
+                task_kwargs = {
+                    "agent": agent,
+                    "request": validated_request,
+                    "assignment": validated_assignment,
+                    "acceptance_criteria": acceptance_criteria,
+                }
+                if specialist is SpecialistName.SEO:
+                    task_kwargs["mode"] = validated_mode
+                task = self._task_factories[specialist](**task_kwargs)
+                crew = self._crew_factory(agent, task)
+                disable_crewai_prompt_cache_breakpoints()
+                output = self._crew_executor(
+                    crew,
+                    {
+                        "target_page": validated_request.target_page,
+                        "instruction": validated_request.instruction,
+                        "assignment": validated_assignment.task,
+                    },
+                )
+                completion = (
+                    extract_seo_completion(output)
+                    if specialist is SpecialistName.SEO
+                    else extract_specialist_completion(output)
+                )
         except Exception as exc:
             secrets = self._all_secrets(groq)
             error = _safe_error("Specialist execution failed", exc, secrets=secrets)
@@ -178,14 +255,21 @@ class SpecialistRunner:
                 secrets = self._all_secrets(groq)
                 error = _safe_error("Specialist token evidence was invalid", exc, secrets=secrets)
 
-        status, status_error = _derive_run_status(
-            completion,
-            patch_results,
-            error,
-            mode=validated_mode,
-        )
+        if error is None and semantic_status is not None:
+            status, status_error = semantic_status, None
+        else:
+            status, status_error = _derive_run_status(
+                completion,
+                patch_results,
+                error,
+                mode=validated_mode,
+            )
         error = status_error
-        model = _result_model(groq, self._groq, self._settings, specialist)
+        model = (
+            "deterministic/css-semantic-v1"
+            if deterministic_model
+            else _result_model(groq, self._groq, self._settings, specialist)
+        )
         return SpecialistRunResult(
             specialist=specialist,
             mode=validated_mode,
@@ -204,6 +288,8 @@ class SpecialistRunner:
             token_usage=usage,
             model=model,
             error=error,
+            style_plan=style_plan,
+            style_changes=style_changes,
         )
 
     def _resolve_groq(self, specialist: SpecialistName) -> GroqConfiguration:

@@ -10,6 +10,7 @@ from agentorchestra.ui.presenters import (
     build_patch_rows,
     build_qa_rows,
     build_specialist_rows,
+    build_style_rows,
     build_timeline_rows,
     diff_download_bytes,
     download_filenames,
@@ -56,6 +57,7 @@ def _render_outcome(report: EditRunReport) -> None:
         st.warning(text)
     elif report.status in {
         EditOutcomeStatus.CLARIFICATION_REQUIRED,
+        EditOutcomeStatus.ALREADY_SATISFIED,
         EditOutcomeStatus.OUT_OF_SCOPE,
         EditOutcomeStatus.DIAGNOSTIC_COMPLETED,
     }:
@@ -137,6 +139,10 @@ def _render_specialists(report: EditRunReport) -> None:
     if patches:
         st.markdown("#### Patch evidence")
         st.dataframe(patches, width="stretch", hide_index=True)
+    style_rows = build_style_rows(report)
+    if style_rows:
+        st.markdown("#### Semantic style evidence")
+        st.dataframe(style_rows, width="stretch", hide_index=True)
     if report.seo_diagnostic_report is not None:
         st.markdown("#### SEO findings")
         st.dataframe(
