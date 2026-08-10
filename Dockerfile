@@ -44,6 +44,7 @@ RUN groupadd -g ${GID} appuser \
     && useradd -m -u ${UID} -g ${GID} appuser
 
 COPY --chown=appuser:appuser agentorchestra/ ./agentorchestra/
+RUN chown appuser:appuser /workspace/agentorchestra
 
 WORKDIR /workspace/agentorchestra
 
