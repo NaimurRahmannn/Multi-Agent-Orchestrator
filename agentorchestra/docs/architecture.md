@@ -14,7 +14,8 @@ flowchart TB
     FLOW --> CSS[CSS specialist]
     FLOW --> SEO[SEO specialist]
     HTML --> TOOLS[Workspace-bound read / exact patch]
-    CSS --> TOOLS
+    CSS --> CSS_TOOLS[Bound read / structured declaration update / exact patch]
+    CSS_TOOLS --> STAGE
     SEO -->|edit| TOOLS
     SEO -->|diagnostic| READ[Bound read only]
     TOOLS --> STAGE[sites/staging/run_id]
@@ -72,13 +73,21 @@ SEO diagnostic mode branches after Lighthouse: it returns findings, skips propos
 flowchart LR
     M[Manager<br/>routing only] -->|no tools| NONE1[ ]
     H[HTML<br/>structure and attributes] --> RP[read_file + propose_patch<br/>target HTML]
-    C[CSS<br/>visual presentation] --> RC[read HTML/CSS + patch style.css]
+    C[CSS<br/>visual presentation] --> RC[read HTML/CSS + structured declaration update<br/>or exact patch to style.css]
     S[SEO edit<br/>metadata] --> RS[read + patch target HTML]
     SD[SEO diagnostic<br/>source findings] --> RO[read_file only]
     Q[QA<br/>evidence evaluation] -->|no tools| NONE2[ ]
 ```
 
 All agents use `allow_delegation=False`. Manager never reads files or invokes specialists. QA is never a selectable specialist.
+
+The CSS specialist prefers `update_css_declaration` for changing an existing property in a
+unique, simple rule. The tool accepts a selector, property, and new value, then delegates the
+actual mutation to the same exact-match, ownership-checked, atomic staged patch service. It
+intentionally rejects missing or repeated selectors/properties, grouped or multiline rules it
+cannot identify safely, no-op values, and values that attempt to add extra declarations. CSS
+insertions, removals, grouped-selector overrides, and other structural changes continue to use
+`propose_patch` with bounded read evidence.
 
 ## File lifecycle
 

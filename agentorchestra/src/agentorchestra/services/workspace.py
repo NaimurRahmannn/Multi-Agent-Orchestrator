@@ -3,10 +3,12 @@ from __future__ import annotations
 import difflib
 import hashlib
 import os
+import re
 import shutil
 import stat
 import tempfile
 import uuid
+from collections import Counter
 from collections.abc import Callable, Collection
 from pathlib import Path, PurePath
 
@@ -418,6 +420,26 @@ def propose_patch(
             before_sha256=before_hash,
         )
 
+    if trusted_specialist is SpecialistName.CSS:
+        duplicate = _introduced_duplicate_css_declaration(content, modified)
+        if duplicate is not None:
+            selector, property_name = duplicate
+            return _rejected_patch(
+                specialist=trusted_specialist,
+                file=proposal.file,
+                summary=proposal.summary,
+                reason=PatchRejectionReason.INVALID_PATCH,
+                message=(
+                    f"CSS patch would introduce duplicate property {property_name!r} in "
+                    f"selector {selector!r}. This write was rejected and nothing changed. "
+                    "Do not return completed; call update_css_declaration with this exact "
+                    "selector and property to update the existing declaration."
+                ),
+                match_count=1,
+                bytes_before=len(original_bytes),
+                before_sha256=before_hash,
+            )
+
     ownership_error = validate_specialist_patch(content, modified, trusted_specialist)
     if ownership_error is not None:
         return _rejected_patch(
@@ -484,6 +506,431 @@ def propose_patch(
         rejection_reason=None,
         message="Patch applied atomically to the staged file.",
     )
+
+
+def update_css_declaration(
+    handle: WorkspaceHandle,
+    *,
+    specialist: SpecialistName | str,
+    selector: str,
+    property_name: str,
+    value: str,
+    summary: str,
+    allowed_files: Collection[str] | None = None,
+    limits: WorkspaceLimits = DEFAULT_WORKSPACE_LIMITS,
+    replace_function: ReplaceFunction | None = None,
+    validation_function: ValidationFunction | None = None,
+) -> PatchExecutionResult:
+    """Update one existing declaration in one uniquely matched simple CSS rule.
+
+    The final mutation passes through ``propose_patch`` so exact matching,
+    ownership checks, atomic replacement, rollback, and staged-site validation
+    remain the source of truth.
+    """
+    try:
+        trusted_specialist = SpecialistName(specialist)
+    except ValueError as exc:
+        raise FileToolError("Trusted specialist identity is invalid.") from exc
+    if trusted_specialist is not SpecialistName.CSS:
+        raise FileToolError("Structured CSS updates require the CSS specialist.")
+
+    file = "style.css"
+    safe_summary = _safe_result_summary(summary)
+    selector = selector.strip() if isinstance(selector, str) else ""
+    property_name = property_name.strip() if isinstance(property_name, str) else ""
+    value = value.strip() if isinstance(value, str) else ""
+    invalid_selector = (
+        not 0 < len(selector) <= 200
+        or any(character in selector for character in "{};\r\n")
+        or "/*" in selector
+    )
+    invalid_property = not re.fullmatch(r"(?:--)?[A-Za-z][A-Za-z0-9-]{0,79}", property_name)
+    invalid_value = (
+        not 0 < len(value) <= 500
+        or any(character in value for character in ";{}\r\n")
+        or "/*" in value
+        or "*/" in value
+    )
+    if invalid_selector or invalid_property or invalid_value:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.INVALID_PATCH,
+            message="Structured CSS selector, property, or value is invalid.",
+        )
+    approved_scope = normalize_allowed_files(allowed_files)
+    if approved_scope is not None and file not in approved_scope:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.UNAUTHORIZED_FILE,
+            message="style.css is outside this assignment's approved patch scope.",
+        )
+
+    validator = validation_function or validate_staged_site
+    validator(handle)
+    try:
+        path = _resolve_tool_file(handle, file)
+        original_bytes = _read_bounded_bytes(path, limits.max_file_bytes, file)
+    except _FileSizeLimitError:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.FILE_TOO_LARGE,
+            message=f"Cannot patch {file}: file exceeds the configured byte limit.",
+        )
+    except FileToolError as exc:
+        reason = (
+            PatchRejectionReason.FILE_NOT_FOUND
+            if "does not exist" in str(exc)
+            else PatchRejectionReason.UNSAFE_PATH
+        )
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=reason,
+            message=str(exc),
+        )
+
+    before_hash = _sha256_bytes(original_bytes)
+    try:
+        content = original_bytes.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.INVALID_ENCODING,
+            message=f"Cannot patch {file}: file is not valid UTF-8.",
+            bytes_before=len(original_bytes),
+            before_sha256=before_hash,
+        )
+
+    code_mask = _css_code_mask(content)
+    rule_matches = _find_simple_css_rules(content, selector, code_mask=code_mask)
+    if not rule_matches:
+        resolved_selector = _resolve_unique_css_selector_extension(
+            content,
+            selector,
+            code_mask=code_mask,
+        )
+        if resolved_selector is not None:
+            selector = resolved_selector
+            rule_matches = _find_simple_css_rules(content, selector, code_mask=code_mask)
+    if not rule_matches:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.TARGET_NOT_FOUND,
+            message=f"CSS selector {selector!r} was not found as a simple rule.",
+            match_count=0,
+            bytes_before=len(original_bytes),
+            before_sha256=before_hash,
+        )
+    if len(rule_matches) > 1:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.AMBIGUOUS_TARGET,
+            message=f"CSS selector {selector!r} matches more than one rule.",
+            match_count=len(rule_matches),
+            bytes_before=len(original_bytes),
+            before_sha256=before_hash,
+        )
+
+    rule_start, body_start, body_end, rule_end = rule_matches[0]
+    body = content[body_start:body_end]
+    declarations = _find_simple_css_declarations(
+        body,
+        property_name,
+        content_offset=body_start,
+        code_mask=code_mask,
+    )
+    if not declarations and property_name.casefold() == "background-color":
+        background_declarations = _find_simple_css_declarations(
+            body,
+            "background",
+            content_offset=body_start,
+            code_mask=code_mask,
+        )
+        if len(background_declarations) == 1:
+            background_start, background_end = background_declarations[0]
+            existing_background = body[background_start:background_end].strip()
+            if _is_color_only_css_value(existing_background):
+                property_name = "background"
+                declarations = background_declarations
+    if not declarations and property_name.casefold() == "height":
+        height_candidates: list[tuple[str, list[tuple[int, int]]]] = []
+        for candidate_name in ("min-height", "max-height"):
+            candidate_declarations = _find_simple_css_declarations(
+                body,
+                candidate_name,
+                content_offset=body_start,
+                code_mask=code_mask,
+            )
+            if len(candidate_declarations) == 1:
+                height_candidates.append((candidate_name, candidate_declarations))
+        if len(height_candidates) == 1:
+            property_name, declarations = height_candidates[0]
+    if not declarations:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.TARGET_NOT_FOUND,
+            message=(
+                f"CSS property {property_name!r} was not found as a single-line declaration "
+                f"in selector {selector!r}."
+            ),
+            match_count=0,
+            bytes_before=len(original_bytes),
+            before_sha256=before_hash,
+        )
+    if len(declarations) > 1:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.AMBIGUOUS_TARGET,
+            message=f"CSS property {property_name!r} appears more than once in {selector!r}.",
+            match_count=len(declarations),
+            bytes_before=len(original_bytes),
+            before_sha256=before_hash,
+        )
+
+    value_start, value_end = declarations[0]
+    current_value = body[value_start:value_end].strip()
+    if current_value == value:
+        return _rejected_patch(
+            specialist=trusted_specialist,
+            file=file,
+            summary=safe_summary,
+            reason=PatchRejectionReason.NO_OP,
+            message=f"CSS property {property_name!r} already has the requested value.",
+            match_count=1,
+            bytes_before=len(original_bytes),
+            before_sha256=before_hash,
+        )
+
+    old_rule = content[rule_start:rule_end]
+    relative_start = body_start - rule_start + value_start
+    relative_end = body_start - rule_start + value_end
+    new_rule = old_rule[:relative_start] + value + old_rule[relative_end:]
+    return propose_patch(
+        handle,
+        specialist=trusted_specialist,
+        file=file,
+        old_text=old_rule,
+        new_text=new_rule,
+        summary=safe_summary,
+        allowed_files=approved_scope,
+        limits=limits,
+        replace_function=replace_function,
+        validation_function=validator,
+    )
+
+
+def _css_code_mask(content: str) -> bytearray:
+    """Mark characters outside CSS comments and quoted strings."""
+    mask = bytearray([1]) * len(content)
+    index = 0
+    state: str | None = None
+    while index < len(content):
+        if state == "comment":
+            mask[index] = 0
+            if content.startswith("*/", index):
+                if index + 1 < len(content):
+                    mask[index + 1] = 0
+                index += 2
+                state = None
+            else:
+                index += 1
+            continue
+        if state in {"'", '"'}:
+            mask[index] = 0
+            if content[index] == "\\" and index + 1 < len(content):
+                mask[index + 1] = 0
+                index += 2
+                continue
+            if content[index] == state:
+                state = None
+            index += 1
+            continue
+        if content.startswith("/*", index):
+            mask[index] = 0
+            if index + 1 < len(content):
+                mask[index + 1] = 0
+            state = "comment"
+            index += 2
+            continue
+        if content[index] in {"'", '"'}:
+            mask[index] = 0
+            state = content[index]
+        index += 1
+    return mask
+
+
+def _find_simple_css_rules(
+    content: str,
+    selector: str,
+    *,
+    code_mask: bytearray,
+) -> list[tuple[int, int, int, int]]:
+    selector_pattern = re.compile(
+        rf"(?m)^[ \t]*{re.escape(selector)}[ \t]*\{{[ \t]*(?:\r?\n|$)"
+    )
+    matches: list[tuple[int, int, int, int]] = []
+    for match in selector_pattern.finditer(content):
+        rule_start = match.start()
+        open_brace = content.find("{", rule_start, match.end())
+        if open_brace < 0 or not code_mask[rule_start] or not code_mask[open_brace]:
+            continue
+        close_brace = _matching_css_brace(content, open_brace, code_mask=code_mask)
+        if close_brace is None:
+            continue
+        body_start = open_brace + 1
+        matches.append((rule_start, body_start, close_brace, close_brace + 1))
+    return matches
+
+
+def _resolve_unique_css_selector_extension(
+    content: str,
+    selector: str,
+    *,
+    code_mask: bytearray,
+) -> str | None:
+    """Resolve a shortened class only when one direct simple-rule extension exists."""
+    if not re.fullmatch(r"\.[A-Za-z_][A-Za-z0-9_-]*", selector):
+        return None
+    selector_pattern = re.compile(
+        r"(?m)^[ \t]*(?P<selector>\.[A-Za-z_][A-Za-z0-9_-]*)[ \t]*\{"
+    )
+    candidates: set[str] = set()
+    for match in selector_pattern.finditer(content):
+        if not code_mask[match.start("selector")]:
+            continue
+        candidate = match.group("selector")
+        if candidate.startswith(f"{selector}-") or candidate.startswith(f"{selector}_"):
+            candidates.add(candidate)
+    if len(candidates) == 1:
+        return candidates.pop()
+    return None
+
+
+def _matching_css_brace(
+    content: str,
+    open_brace: int,
+    *,
+    code_mask: bytearray,
+) -> int | None:
+    depth = 0
+    for index in range(open_brace, len(content)):
+        if not code_mask[index]:
+            continue
+        if content[index] == "{":
+            depth += 1
+        elif content[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return index
+    return None
+
+
+def _find_simple_css_declarations(
+    body: str,
+    property_name: str,
+    *,
+    content_offset: int,
+    code_mask: bytearray,
+) -> list[tuple[int, int]]:
+    flags = re.MULTILINE if property_name.startswith("--") else re.IGNORECASE | re.MULTILINE
+    declaration_pattern = re.compile(
+        rf"^(?P<prefix>[ \t]*{re.escape(property_name)}[ \t]*:[ \t]*)"
+        rf"(?P<value>[^;\r\n{{}}]*?)(?P<suffix>[ \t]*;[ \t]*(?:\r?$|\n))",
+        flags,
+    )
+    matches: list[tuple[int, int]] = []
+    for match in declaration_pattern.finditer(body):
+        absolute_start = content_offset + match.start("prefix")
+        if absolute_start >= len(code_mask) or not code_mask[absolute_start]:
+            continue
+        matches.append(match.span("value"))
+    return matches
+
+
+def _is_color_only_css_value(value: str) -> bool:
+    """Return whether a background shorthand is narrow enough for a color update."""
+    stripped = value.strip()
+    if re.fullmatch(r"#[0-9a-fA-F]{3,8}", stripped):
+        return True
+    if re.fullmatch(r"var\(\s*--[A-Za-z0-9-]+(?:\s*,[^()]*)?\s*\)", stripped):
+        return True
+    if re.fullmatch(
+        r"(?:rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color)\([^{};]*\)",
+        stripped,
+        flags=re.IGNORECASE,
+    ):
+        return True
+    return bool(re.fullmatch(r"[A-Za-z]+", stripped))
+
+
+def _introduced_duplicate_css_declaration(
+    before: str,
+    after: str,
+) -> tuple[str, str] | None:
+    introduced = _css_duplicate_declarations(after) - _css_duplicate_declarations(before)
+    if not introduced:
+        return None
+    selector, property_name = sorted(introduced.elements())[0]
+    return selector, property_name
+
+
+def _css_duplicate_declarations(content: str) -> Counter[tuple[str, str]]:
+    """Count duplicate properties inside simple rules, ignoring nested at-rules."""
+    code_mask = _css_code_mask(content)
+    duplicates: Counter[tuple[str, str]] = Counter()
+    for open_brace, character in enumerate(content):
+        if character != "{" or not code_mask[open_brace]:
+            continue
+        close_brace = _matching_css_brace(content, open_brace, code_mask=code_mask)
+        if close_brace is None:
+            continue
+        body = content[open_brace + 1 : close_brace]
+        if any(
+            code_mask[open_brace + 1 + offset] and token in "{}"
+            for offset, token in enumerate(body)
+        ):
+            continue
+        boundary = max(
+            content.rfind("}", 0, open_brace),
+            content.rfind("{", 0, open_brace),
+            content.rfind(";", 0, open_brace),
+        )
+        selector = " ".join(content[boundary + 1 : open_brace].split())
+        if not selector or selector.startswith("@"):
+            continue
+        properties: Counter[str] = Counter()
+        declaration_pattern = re.compile(
+            r"(?:^|[;\n])\s*(?P<property>(?:--)?[A-Za-z][A-Za-z0-9-]*)\s*:",
+            flags=re.MULTILINE,
+        )
+        for match in declaration_pattern.finditer(body):
+            absolute_start = open_brace + 1 + match.start("property")
+            if not code_mask[absolute_start]:
+                continue
+            property_name = match.group("property")
+            normalized = property_name if property_name.startswith("--") else property_name.casefold()
+            properties[normalized] += 1
+        for property_name, count in properties.items():
+            if count > 1:
+                duplicates[(selector, property_name)] += count - 1
+    return duplicates
 
 
 def find_exact_match_positions(content: str, target: str) -> list[int]:

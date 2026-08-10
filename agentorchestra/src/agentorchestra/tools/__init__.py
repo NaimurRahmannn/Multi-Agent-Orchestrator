@@ -2,7 +2,16 @@
 
 from agentorchestra.runtime import localize_crewai_paths
 from agentorchestra.tools.evidence import PatchEvidenceRecorder
-from agentorchestra.tools.workspace_tools import ProposePatchTool, ReadFileTool
+from agentorchestra.tools.workspace_tools import (
+    ProposePatchTool,
+    ReadFileTool,
+    UpdateCSSDeclarationTool,
+)
 
-__all__ = ["PatchEvidenceRecorder", "ProposePatchTool", "ReadFileTool", "localize_crewai_paths"]
-
+__all__ = [
+    "PatchEvidenceRecorder",
+    "ProposePatchTool",
+    "ReadFileTool",
+    "UpdateCSSDeclarationTool",
+    "localize_crewai_paths",
+]

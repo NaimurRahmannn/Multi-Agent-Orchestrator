@@ -19,7 +19,12 @@ from agentorchestra.prompts.specialists import (
     SPECIALIST_TASK_EXPECTED_OUTPUT,
     build_specialist_task_description,
 )
-from agentorchestra.tools import PatchEvidenceRecorder, ProposePatchTool, ReadFileTool
+from agentorchestra.tools import (
+    PatchEvidenceRecorder,
+    ProposePatchTool,
+    ReadFileTool,
+    UpdateCSSDeclarationTool,
+)
 from agentorchestra.workspace_models import WorkspaceHandle
 
 
@@ -39,11 +44,22 @@ def build_css_agent(
     )
     tools = [
         ReadFileTool(handle=workspace, allowed_files=tuple(sorted({validated_target, "style.css"}))),
+        UpdateCSSDeclarationTool(
+            handle=workspace,
+            allowed_files=("style.css",),
+            recorder=recorder,
+        ),
         ProposePatchTool(
             handle=workspace,
             specialist=SpecialistName.CSS,
             allowed_files=("style.css",),
             recorder=recorder,
+            description=(
+                "CSS fallback for adding or removing declarations/rules only. Never use this "
+                "tool to change the value of an existing CSS property; for any existing value "
+                "change, you must call update_css_declaration instead. A rejected result is not "
+                "success and must never be reported as completed."
+            ),
         ),
     ]
     return build_specialist_agent(
