@@ -95,7 +95,7 @@ a {
   border: 0;
   border-radius: 6px;
   padding: 12px 18px;
-  background: #dc2626;
+  background: var(--accent);
   color: #ffffff;
   font: inherit;
   font-weight: 700;
