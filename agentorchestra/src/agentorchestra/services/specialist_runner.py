@@ -132,7 +132,7 @@ class SpecialistRunner:
             if specialist is SpecialistName.CSS:
                 style_plan = deterministic_style_plan(
                     target_page=validated_request.target_page,
-                    instruction=validated_request.instruction,
+                    instruction=validated_assignment.task,
                 )
                 if style_plan is None:
                     groq = self._resolve_groq(specialist)
@@ -155,7 +155,6 @@ class SpecialistRunner:
                         crew,
                         {
                             "target_page": validated_request.target_page,
-                            "instruction": validated_request.instruction,
                             "assignment": validated_assignment.task,
                         },
                     )
@@ -228,7 +227,6 @@ class SpecialistRunner:
                     crew,
                     {
                         "target_page": validated_request.target_page,
-                        "instruction": validated_request.instruction,
                         "assignment": validated_assignment.task,
                     },
                 )

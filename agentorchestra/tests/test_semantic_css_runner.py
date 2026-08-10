@@ -1,4 +1,9 @@
-from agentorchestra.models import EditRequest, SpecialistAssignment, SpecialistName
+from agentorchestra.models import (
+    EditRequest,
+    ManagerRoutingPlan,
+    SpecialistAssignment,
+    SpecialistName,
+)
 from agentorchestra.services.specialist_execution import SpecialistExecutionService
 from agentorchestra.services.specialist_runner import SpecialistRunner
 from agentorchestra.services.workspace import create_staged_copy
@@ -47,9 +52,17 @@ def test_already_satisfied_css_request_is_not_reported_as_blocked(tmp_path):
         target_page="index.html",
         instruction="Change the Start a project button to red.",
     )
+    plan_payload = execute_plan("css").model_dump(mode="python")
+    plan_payload["assignments"] = [
+        SpecialistAssignment(
+            agent=SpecialistName.CSS,
+            task="Change the Start a project button to red.",
+        )
+    ]
+    plan = ManagerRoutingPlan.model_validate(plan_payload)
     report = SpecialistExecutionService(settings=settings).execute(
         request,
-        execute_plan("css"),
+        plan,
         workspace,
     )
 

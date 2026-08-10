@@ -84,6 +84,11 @@ flowchart LR
 
 All agents use `allow_delegation=False`. Manager never reads files or invokes specialists. QA is never a selectable specialist.
 
+Each specialist receives only its focused Manager assignment, selected page, and bound file scope.
+The original multi-domain request and global acceptance criteria remain in Flow state for routing,
+evidence, and QA; they are not repeated in specialist task context. This prevents one specialist
+from attempting another selected specialist's work in a combined request.
+
 The CSS path separates interpretation from mutation. Common plain-language requests first use a
 deterministic parser; uncommon requests use a one-turn, tool-free planner. Both produce a strict
 `StyleIntentPlan` containing a catalog target ID and allowlisted operation, never raw CSS. Trusted

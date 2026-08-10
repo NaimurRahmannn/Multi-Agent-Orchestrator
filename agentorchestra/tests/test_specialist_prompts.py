@@ -1,4 +1,5 @@
-from agentorchestra.prompts.seo import SEO_EDIT_RULES
+from agentorchestra.models import EditRequest, SpecialistAssignment, SpecialistName
+from agentorchestra.prompts.seo import SEO_EDIT_RULES, build_seo_task_description
 from agentorchestra.prompts.specialists import (
     CSS_OWNERSHIP_PROMPT,
     HTML_OWNERSHIP_PROMPT,
@@ -6,6 +7,8 @@ from agentorchestra.prompts.specialists import (
     SPECIALIST_TASK_EXPECTED_OUTPUT,
     build_specialist_task_description,
 )
+from agentorchestra.prompts.style_planner import build_css_style_plan_description
+from agentorchestra.seo_models import SEOExecutionMode
 from tests.specialist_helpers import execute_plan, request
 
 
@@ -97,3 +100,52 @@ def test_task_context_contains_only_safe_bounded_context():
     assert "staging_root" not in description
     assert "GROQ_API_KEY" not in description
     assert "<!doctype html>" not in description
+
+
+def test_specialist_task_context_excludes_original_request_and_global_criteria():
+    request_with_multiple_domains = EditRequest(
+        target_page="index.html",
+        instruction="Change the heading text and change the green project button to red.",
+    )
+    criteria = ["The heading text changes.", "The project button is red."]
+    html_assignment = SpecialistAssignment(
+        agent=SpecialistName.HTML,
+        task="Change the heading text to simple websites.",
+    )
+    css_assignment = SpecialistAssignment(
+        agent=SpecialistName.CSS,
+        task="Change the Start a project button from green to red.",
+    )
+    seo_assignment = SpecialistAssignment(
+        agent=SpecialistName.SEO,
+        task="Add a concise meta description.",
+    )
+
+    html_description = build_specialist_task_description(
+        specialist=SpecialistName.HTML,
+        request=request_with_multiple_domains,
+        assignment=html_assignment,
+        acceptance_criteria=criteria,
+        allowed_read_files=("index.html",),
+        allowed_patch_files=("index.html",),
+    )
+    css_description = build_css_style_plan_description(
+        request=request_with_multiple_domains,
+        assignment=css_assignment,
+        acceptance_criteria=criteria,
+    )
+    seo_description = build_seo_task_description(
+        mode=SEOExecutionMode.EDIT,
+        request=request_with_multiple_domains,
+        assignment=seo_assignment,
+        acceptance_criteria=criteria,
+    )
+
+    for description, assignment in (
+        (html_description, html_assignment),
+        (css_description, css_assignment),
+        (seo_description, seo_assignment),
+    ):
+        assert assignment.task in description
+        assert request_with_multiple_domains.instruction not in description
+        assert all(criterion not in description for criterion in criteria)
