@@ -4,6 +4,16 @@ AgentOrchestra is a local multi-agent webpage editor for the committed static sa
 
 The main project lives in [`agentorchestra/`](agentorchestra/).
 
+## Engineering highlights
+
+- Common cataloged CSS requests use deterministic semantic parsing and compilation, often without a CSS-model call; unfamiliar requests fall back to a constrained planner.
+- QA decisions are bound to stable evidence and site-content digests that the Flow recomputes immediately before promotion.
+- Thread/process locking and baseline compare-and-swap prevent stale concurrent runs from overwriting accepted work.
+- Strict structured contracts reject contradictory verdicts and require exact acceptance-criteria coverage.
+- Patches are atomically installed, byte-verified, and restored if post-write validation fails.
+- Browser-computed CSS verification supplements source evidence while screenshots remain presentation-only.
+- A built-in Manager benchmark measures structural validity, routing accuracy, latency, and token usage.
+
 ## Repository layout
 
 ```text
@@ -79,6 +89,12 @@ uv run python -m pytest -q
 uv run ruff check .
 git diff --check
 uv run python scripts/verify_clean_install.py --check
+```
+
+Run the live Manager routing benchmark from `agentorchestra/` with:
+
+```bash
+uv run python scripts/run_routing_benchmark.py --include-diagnostics
 ```
 
 ## Documentation
