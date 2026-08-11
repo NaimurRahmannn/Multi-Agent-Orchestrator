@@ -16,7 +16,15 @@ AgentOrchestra is a local multi-agent webpage editor for the committed static sa
 - Playwright `Before` and proposed/accepted screenshots at one desktop viewport.
 - Streamlit routing, timeline, evidence, metrics, and outcome views.
 
-Screenshots are presentation-only artifacts; screenshots do not influence QA.
+## Engineering highlights
+
+- Common cataloged CSS requests use deterministic semantic parsing and compilation, often without a CSS-model call. Unfamiliar requests fall back to a constrained, tool-free planner that produces the same strict style-intent contract.
+- QA receives a stable digest over the request, routing plan, acceptance criteria, specialist and patch evidence, deterministic diff, site-content digest, and optional Lighthouse result. The Flow binds the QA result to those digests and recomputes them immediately before promotion.
+- A project-wide thread/process lock and baseline-digest compare-and-swap prevent stale concurrent runs from silently overwriting accepted work.
+- Strict Pydantic contracts reject unknown fields, contradictory QA verdicts, duplicate criteria, and missing or invented acceptance criteria.
+- Exact patches use same-directory atomic replacement, verify the installed bytes, and restore the original staged bytes when write verification or post-write site validation fails.
+- Semantic CSS evidence is source-verified and, when Playwright is available, supplemented with browser-computed values. Browser verification degrades explicitly to source evidence; screenshots remain outside QA.
+- The Manager routing benchmark measures structural validity, exact route accuracy, latency, and token usage across required and optional diagnostic cases, then writes a deterministic JSON report.
 
 ## Safety model
 
@@ -51,7 +59,6 @@ See [Architecture](docs/architecture.md) for the complete component, sequence, o
   local Lighthouse runs require a discoverable Chrome/Chromium executable.
 - One Groq key/model pair for each live role: Manager, HTML, CSS, SEO, and QA.
 
-The final workflow has been exercised on Windows. Linux and macOS commands are documented where portable, but those platforms are not claimed as tested.
 
 ## Quick start
 
@@ -130,6 +137,9 @@ uv run python scripts/run_lighthouse_seo.py --target-page index.html --apply
 # Screenshot-only working-site capture
 uv run python scripts/capture_page_screenshot.py --target-page index.html --apply
 
+# Live Manager routing benchmark and deterministic JSON report
+uv run python scripts/run_routing_benchmark.py --include-diagnostics
+
 # Transactional reset
 uv run python scripts/reset_demo_site.py --reset
 ```
@@ -146,6 +156,8 @@ uv run python scripts/verify_clean_install.py --check
 ```
 
 Focused example: `uv run python -m pytest tests/test_flow_transitions.py -q`. Full isolated installation is explicit and may use the network: `uv run python scripts/verify_clean_install.py --full --apply`.
+
+The full verifier copies the source into a disposable directory, excludes local secrets, environments, dependencies, staging data, and generated reports, normalizes only the disposable sample site, installs from the committed lockfiles, checks imports and CLI entry points, runs the test suite, and runs Ruff. The source workspace remains untouched.
 
 ## Generated files
 
